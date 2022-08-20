@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reactive</title>
+</head>
+
+<body>
+</body>
+<script type="module">
+    import { reactive, effect, computed, watch } from './reactive.js'
+    const data = {
+        text: 'hello world',
+        foo: true,
+        bar: true,
+        a: 1,
+        b: 1,
+        c: 2
+    }
+    let obj = reactive(data)
+    // 调度器
+    const jobQueue = new Set()
+    // 通过Promise.reslove() 创建一个promise实例，我们用它将一个任务添加到微任务队列
+    const p = Promise.resolve()
+
+    let isFlushing = false
+
+    function flushJob() {
+        if (isFlushing) return
+        isFlushing = true
+        // 在微任务队列中刷新jobQueue队列
+        p.then(() => {
+            jobQueue.forEach(job => job())
+        }).finally(() => {
+            isFlushing = false
+        })
+    }
+
+    // demo1 测试副作用,响应式
+    effect(()=>{
+        console.log('demo1-run effect')
+        document.body.innerHTML = obj.text
+    })
+    setTimeout(()=>{
+        obj.text = 'hello'
+    },1000)
+
+    // demo2 effect 嵌套
+    let temp1, temp2
+    effect(() => {
+        console.log('demo2-effect1 执行')
+        effect(() => {
+            console.log('demo2-effect2 执行')
+            temp2 = obj.bar
+        })
+        temp1 = obj.foo
+    })
+    obj.bar = false
+
+    // demo3 使用调度，自己控制执行顺序,有点像是vue3中，多次执行数据的变化，最后合在一个nextTick里面执行
+    effect(() => {
+        console.log('demo3-'+obj.a)
+    }, {
+        scheduler(fn) {
+            jobQueue.add(fn)
+            flushJob()
+        }
+    })
+    obj.a++
+    obj.a++
+    console.log('demo3-结束了')
+
+    // demo4 实现computed
+    const sum = computed(() => {
+        return obj.b + obj.c
+    })
+    effect(() => {
+        console.log(sum.value, 'demo4-compute 副作用')
+    })
+    obj.b++
+
+    /**
+     * demo5 实现watch
+     * 1.新旧数据的传参
+     * 2.onInvalidate实现对上一个副作用的清除
+    */
+    watch(() => obj.a, (newValue, oldValue) => {
+        console.log('demo5-a的值变了', newValue, oldValue)
+    }, {
+        immediate: true,
+        flush: 'post'
+    })
+    obj.a = 80
+    let img = ''
+    watch(() => obj.a, async (newVal, oldValue, onInvalidate) => {
+        let expire = false
+        onInvalidate(() => {
+            expire = true
+        })
+        let res = await fetch('https://dog.ceo/api/breeds/image/random')
+        let json = await res.json()
+        if (!expire) {
+            img = json.message
+        }
+    })
+
+    obj.a = obj.a + 1
+    setTimeout(() => {
+        obj.a++
+    }, 16)
+</script>
+
+</html>
