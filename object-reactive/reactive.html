@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>object-reactive</title>
+</head>
+
+<body>
+
+</body>
+<script src="./reactive.js"></script>
+<script>
+    // const data = {
+    //     foo: 1,
+    //     get bar(){
+    //         return this.foo
+    //     }
+    // }
+    // // demo1 代理使用Reflect
+    // const p = reactive(data)
+    // effect(()=>{
+    //     console.log(p.bar)
+    // })
+    // p.foo++
+    // p.foo++
+
+    // // demo2 代理in
+    // const obj = { foo:1 }
+    // const p1 = reactive(obj)
+    // effect(()=>{
+    //    console.log('foo' in p1, 'effect')
+    // })
+    // console.log(p1.foo++)
+
+    // // demo3 代理 for...in 
+    // const obj =  { foo:1 }
+    // const p2 = reactive(obj)
+    // effect(()=>{
+    //     for(const key in p2){
+    //         console.log(key,'effect')
+    //     }
+    // })
+    // p2.foo = 2
+
+    // demo4 合理触发响应式(原型链继承)
+    const obj = {}
+    const proto = {
+        foo: 1
+    }
+    const child = reactive(obj)
+    const parent = reactive(proto)
+    Object.setPrototypeOf(child, parent)
+
+    effect(() => {
+        console.log(child.foo)
+    })
+    child.foo = 20
+</script>
+
+</html>
