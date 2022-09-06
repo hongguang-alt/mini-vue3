@@ -45,19 +45,22 @@
     // })
     // p2.foo = 2
 
-    // demo4 合理触发响应式(原型链继承)
-    const obj = {}
-    const proto = {
-        foo: 1
-    }
-    const child = reactive(obj)
-    const parent = reactive(proto)
-    Object.setPrototypeOf(child, parent)
+    // // demo4 合理触发响应式(原型链继承)
+    // const obj = {}
+    // const proto = {
+    //     foo: 1
+    // }
+    // const child = reactive(obj)
+    // const parent = reactive(proto)
+    // Object.setPrototypeOf(child, parent)
 
-    effect(() => {
-        console.log(child.foo)
-    })
-    child.foo = 20
+    // effect(() => {
+    //     console.log(child.foo)
+    // })
+    // child.foo = 20
+
+    // demo5 只读
+    const obj = readOnly({})
 </script>
 
 </html>

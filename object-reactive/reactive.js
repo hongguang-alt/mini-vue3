@@ -174,20 +174,29 @@ function shallowReactive(data) {
   return createReactive(data, true);
 }
 
-function createReactive(data, isShallow = false) {
+function readOnly(data) {
+  return createReactive(data, true, true);
+}
+
+function shallowReadOnly(data) {
+  return createReactive(data, false, true);
+}
+function createReactive(data, isShallow = false, isReadOnly = false) {
   return new Proxy(data, {
     get: function (target, key, receiver) {
       if (key === "raw") {
         return target;
       }
-      track(target, key);
+      if (!isReadOnly) {
+        track(target, key);
+      }
       // 通过代理这个对象，最后一个参数相当于this，详情见demo1
       const res = Reflect.get(target, key, receiver);
       if (isShallow) {
         return res;
       }
       if (typeof res === "object" && res !== null) {
-        return reactive(res);
+        return isReadOnly ? readOnly(res) : reactive(res);
       }
       return res;
     },
@@ -202,6 +211,10 @@ function createReactive(data, isShallow = false) {
       return Reflect.ownKeys(target);
     },
     set: function (target, key, newVal, receiver) {
+      if (isReadOnly) {
+        console.warn(`属性 ${key} 是只读的`);
+        return true;
+      }
       const oldVal = target[key];
       const type = Object.prototype.hasOwnProperty.call(target, key)
         ? TriggerType.SET
@@ -218,6 +231,10 @@ function createReactive(data, isShallow = false) {
     },
     // 针对删除操作，收集依赖？会有问题
     deleteProperty(target, key) {
+      if (isReadOnly) {
+        console.warn(`属性 ${key} 是只读的`);
+        return true;
+      }
       // 检查被操作的属性是否是对象自己的属性
       const hadKey = Object.prototype.hasOwnProperty.call(target, key);
       const res = Reflect.deleteProperty(target, key);
