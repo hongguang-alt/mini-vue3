@@ -49,7 +49,7 @@ function track(target, key) {
 }
 
 // 发布订阅
-function trigger(target, key, type) {
+function trigger(target, key, type, newVal) {
   let depsMap = bucket.get(target);
   if (!depsMap) return;
   let effects = depsMap.get(key);
@@ -70,6 +70,29 @@ function trigger(target, key, type) {
           effectsToRun.add(effectFn);
         }
       });
+  }
+
+  // 针对数组的添加
+  if (type === TriggerType.ADD && Array.isArray(target)) {
+    const lengthEffects = depsMap.get("length");
+    lengthEffects &&
+      lengthEffects.forEach((effectFn) => {
+        if (effectFn !== activeEffect) {
+          effectsToRun.add(effectFn);
+        }
+      });
+  }
+
+  if (Array.isArray(target) && key === "length") {
+    depsMap.forEach((effects, key) => {
+      if (key >= newVal) {
+        effects.forEach((effectFn) => {
+          if (effectFn !== activeEffect) {
+            effectsToRun.add(effectFn);
+          }
+        });
+      }
+    });
   }
 
   effectsToRun &&
@@ -187,7 +210,8 @@ function createReactive(data, isShallow = false, isReadOnly = false) {
       if (key === "raw") {
         return target;
       }
-      if (!isReadOnly) {
+      // 为了防止追踪symbol出现错误
+      if (!isReadOnly && typeof key !== "symbol") {
         track(target, key);
       }
       // 通过代理这个对象，最后一个参数相当于this，详情见demo1
@@ -207,7 +231,7 @@ function createReactive(data, isShallow = false, isReadOnly = false) {
     },
     // 针对 for...in 循环访问的方式，收集依赖
     ownKeys(target) {
-      track(target, ITERATE_KEY);
+      track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
       return Reflect.ownKeys(target);
     },
     set: function (target, key, newVal, receiver) {
@@ -216,7 +240,11 @@ function createReactive(data, isShallow = false, isReadOnly = false) {
         return true;
       }
       const oldVal = target[key];
-      const type = Object.prototype.hasOwnProperty.call(target, key)
+      const type = Array.isArray(target)
+        ? Number(key) < target.length
+          ? TriggerType.SET
+          : TriggerType.ADD
+        : Object.prototype.hasOwnProperty.call(target, key)
         ? TriggerType.SET
         : TriggerType.ADD;
       const res = Reflect.set(target, key, newVal, receiver);
@@ -224,7 +252,7 @@ function createReactive(data, isShallow = false, isReadOnly = false) {
       if (receiver.raw === target) {
         // 后面主要是针对NaN的这种情况
         if (newVal !== oldVal && (oldVal === oldVal || newVal === newVal)) {
-          trigger(target, key, type);
+          trigger(target, key, type, newVal);
         }
       }
       return res;
