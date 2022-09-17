@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>object-reactive</title>
+</head>
+
+<body>
+
+</body>
+<script src="./reactive.js"></script>
+<script>
+    // const p = reactive(new Set([1, 2, 3]))
+    // effect(() => {
+    //     console.log(p.size, p)
+    // })
+    // p.add(4)
+    // p.delete(1)
+    // const p = reactive(new Map([
+    //     ['key', 1]
+    // ]))
+
+    // effect(() => {
+    //     console.log(p.get('key'))
+    // })
+    // p.set('key', 2)
+
+    // const m = new Map()
+    // const p1 = reactive(m)
+    // const p2 = reactive(new Map())
+    // p1.set('p2', p2)
+
+    // effect(() => {
+    //     console.log(m.get('p2').size)
+    // })
+
+    // m.get('p2').set('foo', 1)
+
+    // const p = reactive(new Map([
+    //     [{
+    //         key: 1
+    //     }, {
+    //         value: 1
+    //     }]
+    // ]))
+
+    // effect(() => {
+    //     p.forEach(function (value, key) {
+    //         console.log(value)
+    //         console.log(key)
+    //     })
+    // })
+    // p.set({
+    //     key: 2
+    // }, {
+    //     value: 2
+    // })
+
+    // const key = {
+    //     key: 1
+    // }
+    // const value = new Set([1, 2, 3])
+    // const p = reactive(new Map([
+    //     [key, value]
+    // ]))
+
+    // effect(() => {
+    //     p.forEach(function (value, key) {
+    //         console.log(value)
+    //         console.log(value.size)
+    //     })
+    // })
+
+    // p.get(key).delete(1)
+
+    // const p = reactive(new Map([
+    //     ['key', 1]
+    // ]))
+
+    // effect(() => {
+    //     p.forEach(function (value, key) {
+    //         console.log(value)
+    //     })
+    // })
+
+    // p.set('key', 2)
+
+    // const p = reactive(new Map([
+    //     ['key1', 1],
+    //     ['key2', 2]
+    // ]))
+    // effect(() => {
+    //     for (const [key, value] of p) {
+    //         console.log(key, value)
+    //     }
+    //     for (const [key, value] of p.entries()) {
+    //         console.log(key, value)
+    //     }
+    // })
+
+    const p = reactive(new Map([
+        ['key1', 1],
+        ['key2', 2]
+    ]))
+    effect(() => {
+        for (const value of p.keys()) {
+            console.log(value)
+        }
+    })
+    p.set('key2', 3)
+    p.set('key3', 5)
+</script>
+
+</html>
