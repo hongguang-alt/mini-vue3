@@ -99,10 +99,22 @@
     // })
     // arr[1] = 3
 
-    const obj = {}
-    const arr = reactive([obj])
+    // const obj = {}
+    // const arr = reactive([obj])
 
-    console.log(arr.includes(arr[0]))
+    // console.log(arr.includes(arr[0]))
+    // console.log(arr.includes(obj))
+    // console.log(arr.indexOf(arr[0]))
+
+    const arr = reactive([])
+    effect(() => {
+        arr.push(1)
+    })
+
+    effect(() => {
+        arr.push(1)
+    })
+    console.log(arr[0])
 </script>
 
 </html>

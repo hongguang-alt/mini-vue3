@@ -3,6 +3,30 @@ const TriggerType = {
   ADD: "ADD",
   DELETE: "DELETE",
 };
+
+const arrayInstrumentations = {};
+["includes", "indexOf", "lastIndexOf"].forEach((method) => {
+  const originMethods = Array.prototype[method];
+  arrayInstrumentations[method] = function (...args) {
+    let res = originMethods.apply(this, args);
+    if (res === false || res === -1) {
+      res = originMethods.apply(this.raw, args);
+    }
+    return res;
+  };
+});
+
+let shouldTrack = true;
+["push", "pop", "shift", "unshift", "splice"].forEach((method) => {
+  const originMethods = Array.prototype[method];
+  arrayInstrumentations[method] = function (...args) {
+    shouldTrack = false;
+    let res = originMethods.apply(this, args);
+    shouldTrack = true;
+    return res;
+  };
+});
+
 // 用于循环的收集依赖参数
 const ITERATE_KEY = Symbol();
 // 全局变量存储副作用
@@ -35,7 +59,7 @@ const effect = (fn, options = {}) => {
 const bucket = new WeakMap();
 // 依赖收集
 function track(target, key) {
-  if (!activeEffect) return;
+  if (!activeEffect || !shouldTrack) return;
   let depsMap = bucket.get(target);
   if (!depsMap) {
     bucket.set(target, (depsMap = new Map()));
@@ -188,9 +212,17 @@ function traverse(value, seen = new Set()) {
   }
   return value;
 }
+const reactiveMap = new Map();
 
 function reactive(data) {
-  return createReactive(data);
+  const existionProxy = reactiveMap.get(data);
+  if (existionProxy) return existionProxy;
+
+  const proxy = createReactive(data);
+
+  reactiveMap.set(data, proxy);
+
+  return proxy;
 }
 
 function shallowReactive(data) {
@@ -210,6 +242,11 @@ function createReactive(data, isShallow = false, isReadOnly = false) {
       if (key === "raw") {
         return target;
       }
+      // 重写数组的方法，查看arrayInstrumentations中是否定义了对应的key
+      if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
+        return Reflect.get(arrayInstrumentations, key, receiver);
+      }
+
       // 为了防止追踪symbol出现错误
       if (!isReadOnly && typeof key !== "symbol") {
         track(target, key);
