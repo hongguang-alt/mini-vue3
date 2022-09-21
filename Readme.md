@@ -8,3 +8,6 @@
 
 - reactive
 - object-reactive(非原始值的响应式)
+- map-set-reactive(map和set的响应式)
+- ref(实现ref对应的响应式)
+- render(实现渲染器)
