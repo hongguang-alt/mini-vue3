@@ -1,6 +1,7 @@
 // 定义文本和注释节点的唯一标识
 const Text = Symbol();
 const Comment = Symbol();
+const Fragment = Symbol();
 
 function renderer(vnode, container) {
   const options = {
@@ -80,6 +81,10 @@ function createRenderer(options) {
   } = options;
 
   function unmounted(vnode) {
+    if (vnode.type === Fragment) {
+      vnode.children.forEach((c) => unmounted(c));
+      return;
+    }
     const parentNode = vnode.el.parentNode;
     if (parentNode) {
       parentNode.removeChild(vnode.el);
@@ -185,6 +190,15 @@ function createRenderer(options) {
         if (n2.children !== n1.children) {
           setText(el, n2.children);
         }
+      }
+    } else if (type === Fragment) {
+      // Fragment 节点
+      if (!n1) {
+        // 如果旧的 vnode 不存在，则只需要将 Fragment 的 children 逐个挂载
+        n2.children.forEach((c) => patch(null, c, container));
+      } else {
+        // 如果旧的 vnode 存在，则更新 Fragment 的 children 就可以
+        patchChildren(n1, n2, container);
       }
     } else if (typeof type === "object") {
       // 这里是对组件做处理
