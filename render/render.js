@@ -1,3 +1,7 @@
+// 定义文本和注释节点的唯一标识
+const Text = Symbol();
+const Comment = Symbol();
+
 function renderer(vnode, container) {
   const options = {
     createElement(tag) {
@@ -5,6 +9,12 @@ function renderer(vnode, container) {
     },
     setElementText(el, text) {
       el.textContent = text;
+    },
+    setText(el, text) {
+      el.nodeValue = text;
+    },
+    createTextNode(text) {
+      return document.createTextNode(text);
     },
     insert(el, parent, anchor = null) {
       parent.insertBefore(el, anchor);
@@ -60,7 +70,14 @@ function renderer(vnode, container) {
 }
 
 function createRenderer(options) {
-  const { createElement, setElementText, insert, patchProps } = options;
+  const {
+    createElement,
+    setElementText,
+    insert,
+    patchProps,
+    setText,
+    createTextNode,
+  } = options;
 
   function unmounted(vnode) {
     const parentNode = vnode.el.parentNode;
@@ -70,13 +87,56 @@ function createRenderer(options) {
   }
 
   // 更新节点
-  function patchElement(preVnode, newVnode) {
-    // 为了测试，直接进行覆盖
-    let el = preVnode.el;
-    // 对于新的节点的props进行更新
-    if (newVnode.props) {
-      for (const key in newVnode.props) {
-        patchProps(el, key, null, newVnode.props[key]);
+  function patchElement(n1, n2) {
+    const el = (n2.el = n1.el);
+    const oldProps = n1.props;
+    const newProps = n2.props;
+    for (const key in newProps) {
+      // 如果新的属性不在旧的属性之中
+      if (newProps[key] !== oldProps[key]) {
+        patchProps(el, key, oldProps[key], newProps[key]);
+      }
+    }
+
+    // 删除一些旧的属性，使用的是设置为null，而不是直接清空
+    for (const key in oldProps) {
+      if (!(key in newProps)) {
+        patchProps(el, key, oldProps[key], null);
+      }
+    }
+
+    // 更新children
+    patchChildren(n1, n2, el);
+  }
+
+  // 更新children
+  function patchChildren(n1, n2, container) {
+    if (typeof n2.children === "string") {
+      // 旧节点的类型，如果是数组的话，遍历，卸载，如果为空或者为string类型，就直接设置文本就行了
+      if (Array.isArray(n1.children)) {
+        n1.children.forEach((c) => unmounted(c));
+      }
+
+      // 最后将新的文本节点内容设置给容器元素
+      setElementText(container, n2.children);
+    } else if (Array.isArray(n2.children)) {
+      if (Array.isArray(n1.children)) {
+        // 涉及到diff算法
+        // 临时处理，先全都卸载，然后再全部挂载
+        n1.children.forEach((c) => unmounted(c));
+        n2.children.forEach((c) => patchChildren(null, c, container));
+      } else {
+        // 旧节点可能是文本节点，也有可能是空（null）
+        setElementText(container, null);
+        // 将新的一组节点进行挂载
+        n2.children.forEach((c) => path(null, c, container));
+      }
+    } else {
+      // 新节点不存在
+      if (Array.isArray(n1.children)) {
+        n1.children.forEach((c) => unmounted(c));
+      } else if (typeof n1.child === "string") {
+        setElementText(container, "");
       }
     }
   }
@@ -114,6 +174,17 @@ function createRenderer(options) {
       } else {
         // 做diff的挂载
         patchElement(n1, n2);
+      }
+    } else if (type === Text) {
+      // 文本节点
+      if (!n1) {
+        const el = (n2.el = createTextNode(n2.children));
+        insert(el, container);
+      } else {
+        const el = (n2.el = n1.el);
+        if (n2.children !== n1.children) {
+          setText(el, n2.children);
+        }
       }
     } else if (typeof type === "object") {
       // 这里是对组件做处理
