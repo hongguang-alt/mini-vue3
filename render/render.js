@@ -121,20 +121,47 @@ function createRenderer(options) {
       if (Array.isArray(n1.children)) {
         n1.children.forEach((c) => unmounted(c));
       }
-
       // 最后将新的文本节点内容设置给容器元素
       setElementText(container, n2.children);
     } else if (Array.isArray(n2.children)) {
       if (Array.isArray(n1.children)) {
         // 涉及到diff算法
         // 临时处理，先全都卸载，然后再全部挂载
-        n1.children.forEach((c) => unmounted(c));
-        n2.children.forEach((c) => patchChildren(null, c, container));
+        // n1.children.forEach((c) => unmounted(c));
+        // n2.children.forEach((c) => patchChildren(null, c, container));
+
+        const oldChildren = n1.children;
+        const newChildren = n2.children;
+
+        let lastIndex = 0;
+        // 逐层遍历节点
+        for (let i = 0; i < newChildren.length; i++) {
+          let newVnode = newChildren[i];
+          for (let j = 0; j < oldChildren.length; j++) {
+            let oldVnode = oldChildren[j];
+            if (newVnode.key === oldVnode.key) {
+              patch(oldVnode, newVnode, container);
+
+              if (j < lastIndex) {
+                // 获取上一个vnode的节点信息
+                let preVnode = newChildren[i - 1];
+                // 如果上一个节点不存在，则表明是第一个节点，不需要移动
+                if (preVnode) {
+                  let anchor = preVnode.el.nextSibling;
+                  insert(newVnode.el, container, anchor);
+                }
+              } else {
+                lastIndex = j;
+              }
+              break;
+            }
+          }
+        }
       } else {
         // 旧节点可能是文本节点，也有可能是空（null）
         setElementText(container, null);
         // 将新的一组节点进行挂载
-        n2.children.forEach((c) => path(null, c, container));
+        n2.children.forEach((c) => patch(null, c, container));
       }
     } else {
       // 新节点不存在
@@ -153,7 +180,7 @@ function createRenderer(options) {
     } else if (Array.isArray(vnode.children)) {
       // 如果是数组，就遍历每一个节点，并且调用patch挂载他们
       vnode.children.forEach((child) => {
-        path(null, child, el);
+        patch(null, child, el);
       });
     }
 
@@ -165,7 +192,7 @@ function createRenderer(options) {
 
     insert(el, container);
   }
-  function path(n1, n2, container) {
+  function patch(n1, n2, container) {
     // 如果新旧vnode的类型不同，就直接卸载
     if (n1 && n2.type !== n1.type) {
       unmounted(n1);
@@ -207,7 +234,7 @@ function createRenderer(options) {
   function render(vnode, container) {
     // 如果有vode，就挂载
     if (vnode) {
-      path(container._vnode, vnode, container);
+      patch(container._vnode, vnode, container);
     } else {
       // 如果没有vnode，查看之前的vode，并且走卸载逻辑
       if (container._vnode) {
