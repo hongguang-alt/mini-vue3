@@ -114,6 +114,115 @@ function createRenderer(options) {
     patchChildren(n1, n2, el);
   }
 
+  // 简单 diff 算法
+  function patchSimpleChildren(n1, n2, container) {
+    const oldChildren = n1.children;
+    const newChildren = n2.children;
+
+    let lastIndex = 0;
+    // 逐层遍历节点
+    for (let i = 0; i < newChildren.length; i++) {
+      let find = false;
+      let newVnode = newChildren[i];
+      for (let j = 0; j < oldChildren.length; j++) {
+        let oldVnode = oldChildren[j];
+        if (newVnode.key === oldVnode.key) {
+          find = true;
+          patch(oldVnode, newVnode, container);
+
+          if (j < lastIndex) {
+            // 获取上一个vnode的节点信息
+            let preVnode = newChildren[i - 1];
+            // 如果上一个节点不存在，则表明是第一个节点，不需要移动
+            if (preVnode) {
+              let anchor = preVnode.el.nextSibling;
+              insert(newVnode.el, container, anchor);
+            }
+          } else {
+            lastIndex = j;
+          }
+          break;
+        }
+      }
+      if (!find) {
+        // 说明当前 newVnode 没有在旧的一组子节点中找到可复用的节点
+        // 也就是说，当前 newVnode 是一个新增节点，需要挂载
+        const preVnode = newChildren[i - 1];
+        let anchor = null;
+        if (preVnode) {
+          anchor = preVnode.el.nextSibling;
+        } else {
+          anchor = container.firstChild;
+        }
+
+        patch(null, newVnode, container, anchor);
+      }
+    }
+
+    // 遍历旧的一组子节点
+    for (let i = 0; i < oldChildren.length; i++) {
+      const oldVnode = oldChildren[i];
+
+      const has = newChildren.find((vnode) => vnode.key === oldVnode.key);
+      if (!has) {
+        unmounted(oldVnode);
+      }
+    }
+  }
+
+  // 双端 diff 算法
+  function patchKeyedChildren(n1, n2, container) {
+    const oldChildren = n1.children;
+    const newChildren = n2.children;
+
+    let oldStartIdx = 0;
+    let oldEndIdx = oldChildren.length - 1;
+    let newStartIdx = 0;
+    let newEndIdx = newChildren.length - 1;
+
+    let oldStartVnode = oldChildren[oldStartIdx];
+    let oldEndVnode = oldChildren[oldEndIdx];
+    let newStartVnode = newChildren[newStartIdx];
+    let newEndVnode = newChildren[newEndIdx];
+
+    while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
+      if (oldStartIdx.key === newStartIdx.key) {
+        // 打补丁
+        patch(oldStartVnode, newStartVnode, container);
+
+        // 更新索引值
+        oldStartVnode = oldChildren[++oldStartIdx];
+        newStartVnode = newChildren[++newStartIdx];
+      } else if (oldEndIdx.key === newEndIdx.key) {
+        // 打补丁
+        patch(oldEndVnode, newEndVnode, container);
+        // 更新索引值
+        oldEndIdx = oldChildren[--oldEndIdx];
+        newEndIdx = newChildren[--newEndIdx];
+      } else if (oldStartIdx.key === newEndIdx.key) {
+        // 打补丁
+        patch(oldStartVnode, newEndVnode, container);
+
+        // 移动到老的节点的最后一个
+        insert(oldStartVnode.el, container, oldEndVnode.el.nextSibling);
+
+        // 更新索引值
+        oldStartVnode = oldChildren[++oldStartIdx];
+        newEndVnode = newChildren[--newEndIdx];
+      } else if (oldEndIdx.key === newStartIdx.key) {
+        // 打补丁
+        patch(oldEndVnode, newStartVnode, container);
+
+        // 将节点从最后面移动到最上面
+        insert(oldEndVnode.el, container, oldStartVnode.el);
+
+        // 移动 dom 完成之后，更新索引值
+        oldEndVnode = oldChildren[--oldEndIdx];
+        newStartVnode = newChildren[++newStartIdx];
+      }
+    }
+  }
+
   // 更新children
   function patchChildren(n1, n2, container) {
     if (typeof n2.children === "string") {
@@ -129,59 +238,8 @@ function createRenderer(options) {
         // 临时处理，先全都卸载，然后再全部挂载
         // n1.children.forEach((c) => unmounted(c));
         // n2.children.forEach((c) => patchChildren(null, c, container));
-
-        const oldChildren = n1.children;
-        const newChildren = n2.children;
-
-        let lastIndex = 0;
-        // 逐层遍历节点
-        for (let i = 0; i < newChildren.length; i++) {
-          let find = false;
-          let newVnode = newChildren[i];
-          for (let j = 0; j < oldChildren.length; j++) {
-            let oldVnode = oldChildren[j];
-            if (newVnode.key === oldVnode.key) {
-              find = true;
-              patch(oldVnode, newVnode, container);
-
-              if (j < lastIndex) {
-                // 获取上一个vnode的节点信息
-                let preVnode = newChildren[i - 1];
-                // 如果上一个节点不存在，则表明是第一个节点，不需要移动
-                if (preVnode) {
-                  let anchor = preVnode.el.nextSibling;
-                  insert(newVnode.el, container, anchor);
-                }
-              } else {
-                lastIndex = j;
-              }
-              break;
-            }
-          }
-          if (!find) {
-            // 说明当前 newVnode 没有在旧的一组子节点中找到可复用的节点
-            // 也就是说，当前 newVnode 是一个新增节点，需要挂载
-            const preVnode = newChildren[i - 1];
-            let anchor = null;
-            if (preVnode) {
-              anchor = preVnode.el.nextSibling;
-            } else {
-              anchor = container.firstChild;
-            }
-
-            patch(null, newVnode, container, anchor);
-          }
-        }
-
-        // 遍历旧的一组子节点
-        for (let i = 0; i < oldChildren.length; i++) {
-          const oldVnode = oldChildren[i];
-
-          const has = newChildren.find((vnode) => vnode.key === oldVnode.key);
-          if (!has) {
-            unmounted(oldVnode);
-          }
-        }
+        // 简单 diff 算法
+        patchSimpleChildren(n1, n2, container);
       } else {
         // 旧节点可能是文本节点，也有可能是空（null）
         setElementText(container, null);
