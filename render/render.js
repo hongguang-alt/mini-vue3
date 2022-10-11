@@ -136,10 +136,12 @@ function createRenderer(options) {
         let lastIndex = 0;
         // 逐层遍历节点
         for (let i = 0; i < newChildren.length; i++) {
+          let find = false;
           let newVnode = newChildren[i];
           for (let j = 0; j < oldChildren.length; j++) {
             let oldVnode = oldChildren[j];
             if (newVnode.key === oldVnode.key) {
+              find = true;
               patch(oldVnode, newVnode, container);
 
               if (j < lastIndex) {
@@ -155,6 +157,29 @@ function createRenderer(options) {
               }
               break;
             }
+          }
+          if (!find) {
+            // 说明当前 newVnode 没有在旧的一组子节点中找到可复用的节点
+            // 也就是说，当前 newVnode 是一个新增节点，需要挂载
+            const preVnode = newChildren[i - 1];
+            let anchor = null;
+            if (preVnode) {
+              anchor = preVnode.el.nextSibling;
+            } else {
+              anchor = container.firstChild;
+            }
+
+            patch(null, newVnode, container, anchor);
+          }
+        }
+
+        // 遍历旧的一组子节点
+        for (let i = 0; i < oldChildren.length; i++) {
+          const oldVnode = oldChildren[i];
+
+          const has = newChildren.find((vnode) => vnode.key === oldVnode.key);
+          if (!has) {
+            unmounted(oldVnode);
           }
         }
       } else {
@@ -173,7 +198,7 @@ function createRenderer(options) {
     }
   }
 
-  function mountElement(vnode, container) {
+  function mountElement(vnode, container, anchor) {
     const el = (vnode.el = createElement(vnode.type));
     if (typeof vnode.children === "string") {
       setElementText(el, vnode.children);
@@ -190,9 +215,9 @@ function createRenderer(options) {
       }
     }
 
-    insert(el, container);
+    insert(el, container, anchor);
   }
-  function patch(n1, n2, container) {
+  function patch(n1, n2, container, anchor) {
     // 如果新旧vnode的类型不同，就直接卸载
     if (n1 && n2.type !== n1.type) {
       unmounted(n1);
@@ -202,7 +227,7 @@ function createRenderer(options) {
     // 正常的标签
     if (typeof type === "string") {
       if (!n1) {
-        mountElement(n2, container);
+        mountElement(n2, container, anchor);
       } else {
         // 做diff的挂载
         patchElement(n1, n2);

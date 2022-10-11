@@ -108,14 +108,18 @@
             key: 1
         }, {
             type: 'p',
+            children: '4',
+            key: 4
+        }, {
+            type: 'p',
             children: '2',
             key: 2
         }]
     }
 
-    renderer(oldVnode, document.getElementById('app1'))
+    renderer(newVnode, document.getElementById('app1'))
     setTimeout(() => {
-        renderer(newVnode, document.getElementById('app1'))
+        renderer(oldVnode, document.getElementById('app1'))
     }, 3000)
 </script>
 
