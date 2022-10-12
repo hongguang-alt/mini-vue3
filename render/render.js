@@ -186,7 +186,10 @@ function createRenderer(options) {
     let newEndVnode = newChildren[newEndIdx];
 
     while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
-      if (oldStartIdx.key === newStartIdx.key) {
+      if (!oldStartVnode) {
+        // 如果头尾部节点为undefined，则说明该节点已经被处理过了，直接跳到下一个位置
+        oldStartVnode = oldChildren[++oldStartIdx];
+      } else if (oldStartIdx.key === newStartIdx.key) {
         // 打补丁
         patch(oldStartVnode, newStartVnode, container);
 
@@ -219,6 +222,44 @@ function createRenderer(options) {
         // 移动 dom 完成之后，更新索引值
         oldEndVnode = oldChildren[--oldEndIdx];
         newStartVnode = newChildren[++newStartIdx];
+      } else {
+        // 递归旧children，视图寻找与 newStartVNode 拥有相同 key 值的元素
+        const idxInOld = oldChildren.findIndex(
+          (n) => n.key === newStartVnode.key
+        );
+        // idxInOld 位置对应的 Vnode 就是需要移动的节点
+        if (idxInOld > 0) {
+          const VNodeToMove = oldChildren[idxInOld];
+          // 打补丁
+          patch(VNodeToMove, newStartVnode, container);
+
+          // 将 vnodeToMove 移动到头部节点 oldStartVNode.el 之前，因此使用后者作为锚点
+          insert(VNodeToMove.el, container, oldStartVnode.el);
+
+          oldChildren[idxInOld] = undefined;
+        } else {
+          // 将 newStartVNode 作为新节点挂载到头部，使用当前头部节点 oldStartVNode.el 作为锚点
+          patch(null, newStartVnode, container, oldStartVnode.el);
+        }
+        // 更新 newStartIdx 到下一个位置
+        newStartVnode = newChildren[++newStartIdx];
+      }
+    }
+
+    // 循环结束后检查索引值的情况
+    if (oldEndIdx < oldStartIdx && newStartIdx <= newEndIdx) {
+      // 如果满足条件，则说明有新的节点遗留，需要挂载它们
+      for (let i = newStartIdx; i <= newEndIdx; i++) {
+        // 这一步 anchor 不理解，这样的结果不都是 null 么
+        const anchor = newChildren[newEndIdx + 1]
+          ? newChildren[newEndIdx + 1].el
+          : null;
+        patch(null, newChildren[i], container, anchor);
+      }
+    } else if (newEndIdx < newStartIdx && oldStartIdx <= oldEndIdx) {
+      // 如果满足条件，表明一些节点需要被卸载
+      for (let i = oldStartIdx; i <= oldEndIdx; i++) {
+        unmounted(oldChildren[i]);
       }
     }
   }
@@ -239,7 +280,9 @@ function createRenderer(options) {
         // n1.children.forEach((c) => unmounted(c));
         // n2.children.forEach((c) => patchChildren(null, c, container));
         // 简单 diff 算法
-        patchSimpleChildren(n1, n2, container);
+        // patchSimpleChildren(n1, n2, container);
+        // 双端 diff 算法
+        patchKeyedChildren(n1, n2, container);
       } else {
         // 旧节点可能是文本节点，也有可能是空（null）
         setElementText(container, null);
