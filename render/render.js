@@ -264,6 +264,105 @@ function createRenderer(options) {
     }
   }
 
+  // 快速 diff 算法
+  function patchFastKeyedChildren(n1, n2, container) {
+    const newChildren = n2.children;
+    const oldChildren = n1.children;
+
+    // 处理相同的前置节点
+    let j = 0;
+    let oldVNode = oldChildren[j];
+    let newVNode = newChildren[j];
+    while (oldVNode.key === newVNode.key) {
+      // 对于新旧节点进行打补丁
+      patch(oldVNode, newVNode, container);
+      j++;
+      oldVNode = oldChildren[j];
+      newVNode = newChildren[j];
+    }
+
+    // 处理相同的后置节点
+    let oldEnd = oldChildren.length - 1;
+    let newEnd = newChildren.length - 1;
+
+    oldVNode = oldChildren[oldEnd];
+    newVNode = newChildren[newEnd];
+
+    while (oldVNode.key === newVNode.key) {
+      patch(oldVNode, newVNode, container);
+      oldEnd--;
+      newEnd--;
+      oldVNode = oldChildren[oldEnd];
+      newVNode = newChildren[newEnd];
+    }
+
+    // 预处理完毕后，如果满足 j <= newEnd && j > oldEnd ，则说明 j --> newEnd 节点之间都是新节点
+    if (j > oldEnd && j <= newEnd) {
+      const anchorIndex = newEnd + 1;
+      // 如果锚点的索引超过新节点的长度，那么就是最后一个节点，那么锚点就为 null
+      const anchor =
+        anchorIndex < newChildren.length ? newChildren[anchorIndex] : null;
+
+      // 对于区间的锚点，以此挂载
+      while (j <= newEnd) {
+        patch(null, newChildren[j++], container, anchor);
+      }
+    } else if (j <= oldEnd && j > newEnd) {
+      // 如果满足 j > newEnd && j <= oldEnd ，则说明 j--> oldEnd 节点之间都是旧节点，都需要卸载
+      while (j <= oldEnd) {
+        unmounted(oldChildren[j++]);
+      }
+    } else {
+      const count = newEnd - j + 1;
+      const source = new Array(count);
+      source.fill(-1);
+
+      const oldStart = j;
+      const newStart = j;
+      // 新增两个变量， moved 和 pos
+      let moved = false;
+      let pos = 0;
+
+      // 构建索引表
+      const keyIndex = {};
+      for (let i = newStart; i <= newEnd; i++) {
+        keyIndex[newChildren[i].key] = i;
+      }
+
+      // 新增 patched 变量，代表更新过的节点数量
+      let patched = 0;
+      // 遍历旧的一组子节点中剩余未处理的节点
+      for (let i = oldStart; i < oldEnd; i++) {
+        oldVNode = oldChildren[i];
+
+        if (patched < count) {
+          const k = keyIndex[oldVNode.key];
+
+          if (typeof key !== "undefined") {
+            newVNode = newChildren[k];
+            // 调用 patch 函数进行打补丁
+            patch(oldVNode, newVNode, container);
+            // 每更新一个节点，都将 patched 变量 +1
+            patched++;
+            source[k - newStart] = i;
+            // 判断节点是否需要移动
+            if (k < pos) {
+              moved = true;
+            } else {
+              pos = k;
+            }
+          } else {
+            // 新节点中不存在，直接卸载
+            unmounted(oldVNode);
+          }
+        } else {
+          // 如果更新过的节点数量大于需要更新的节点数量，则卸载多余的节点
+          unmounted(oldVNode);
+        }
+      }
+    }
+  }
+
   // 更新children
   function patchChildren(n1, n2, container) {
     if (typeof n2.children === "string") {
