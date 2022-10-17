@@ -1,3 +1,48 @@
+// 定序列的递增子序列
+function getSequence(arr) {
+  const p = arr.slice();
+  const result = [0];
+  let i, j, u, v, c;
+  const len = arr.length;
+  for (i = 0; i < len; i++) {
+    const arrI = arr[i];
+    if (arrI !== 0) {
+      j = result[result.length - 1];
+      if (arr[j] < arrI) {
+        p[i] = j;
+        result.push(i);
+        continue;
+      }
+      u = 0;
+      v = result.length - 1;
+      while (u < v) {
+        c = ((u + v) / 2) | 0;
+        if (arr[result[c] < arrI]) {
+          u = c + 1;
+        } else {
+          v = c;
+        }
+      }
+
+      if (arrI < arr[result[v]]) {
+        if (u > 0) {
+          p[i] = result[u - 1];
+        }
+        result[u] = i;
+      }
+    }
+  }
+
+  u = result.length;
+  v = result[u - 1];
+  while (u-- > 0) {
+    result[u] = v;
+    v = p[v];
+  }
+
+  return result;
+}
+
 // 定义文本和注释节点的唯一标识
 const Text = Symbol();
 const Comment = Symbol();
@@ -301,7 +346,7 @@ function createRenderer(options) {
       const anchorIndex = newEnd + 1;
       // 如果锚点的索引超过新节点的长度，那么就是最后一个节点，那么锚点就为 null
       const anchor =
-        anchorIndex < newChildren.length ? newChildren[anchorIndex] : null;
+        anchorIndex < newChildren.length ? newChildren[anchorIndex].el : null;
 
       // 对于区间的锚点，以此挂载
       while (j <= newEnd) {
@@ -332,13 +377,13 @@ function createRenderer(options) {
       // 新增 patched 变量，代表更新过的节点数量
       let patched = 0;
       // 遍历旧的一组子节点中剩余未处理的节点
-      for (let i = oldStart; i < oldEnd; i++) {
+      for (let i = oldStart; i <= oldEnd; i++) {
         oldVNode = oldChildren[i];
+        console.log(oldVNode);
 
-        if (patched < count) {
+        if (patched <= count) {
           const k = keyIndex[oldVNode.key];
-
-          if (typeof key !== "undefined") {
+          if (typeof k !== "undefined") {
             newVNode = newChildren[k];
             // 调用 patch 函数进行打补丁
             patch(oldVNode, newVNode, container);
@@ -358,6 +403,39 @@ function createRenderer(options) {
         } else {
           // 如果更新过的节点数量大于需要更新的节点数量，则卸载多余的节点
           unmounted(oldVNode);
+        }
+      }
+      // 如果需要移动
+      if (moved) {
+        // 获取最长递增子序列
+        const seq = getSequence(source);
+
+        let s = seq.length - 1;
+        let i = count - 1;
+        for (i; i >= 0; i--) {
+          if (source[i] === -1) {
+            // 说明索引为 i 的节点是全新的节点，应该将其挂载
+            // 该节点在新 children 中的真实位置索引
+            const pos = i + newStart;
+            const newVNode = newChildren[pos];
+            // 该节点的下一个节点的位置索引
+            const nextPos = pos + 1;
+            const anchor =
+              nextPos < newChildren.length ? newChildren[nextPos].el : null;
+            patch(null, newVNode, container, anchor);
+          } else if (i !== seq[s]) {
+            // 如果节点的索引 i 不等于 seq[i] 的值，说明该节点需要移动
+            const pos = i + newStart;
+            const newVNode = newChildren[pos];
+            const nextPos = pos + 1;
+            const anchor =
+              nextPos < newChildren.length ? newChildren[nextPos].el : null;
+            insert(newVNode.el, container, anchor);
+          } else {
+            // 当 i === seq[s] 时，说明该位置的节点不需要移动
+            // 并让 s 指向下一个位置
+            s--;
+          }
         }
       }
     }
@@ -381,7 +459,9 @@ function createRenderer(options) {
         // 简单 diff 算法
         // patchSimpleChildren(n1, n2, container);
         // 双端 diff 算法
-        patchKeyedChildren(n1, n2, container);
+        // patchKeyedChildren(n1, n2, container);
+        // 快速diff算法
+        patchFastKeyedChildren(n1, n2, container);
       } else {
         // 旧节点可能是文本节点，也有可能是空（null）
         setElementText(container, null);
