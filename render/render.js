@@ -379,8 +379,8 @@ function createRenderer(options) {
       // 遍历旧的一组子节点中剩余未处理的节点
       for (let i = oldStart; i <= oldEnd; i++) {
         oldVNode = oldChildren[i];
-        console.log(oldVNode);
 
+        
         if (patched <= count) {
           const k = keyIndex[oldVNode.key];
           if (typeof k !== "undefined") {
