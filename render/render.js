@@ -380,7 +380,6 @@ function createRenderer(options) {
       for (let i = oldStart; i <= oldEnd; i++) {
         oldVNode = oldChildren[i];
 
-        
         if (patched <= count) {
           const k = keyIndex[oldVNode.key];
           if (typeof k !== "undefined") {
@@ -478,6 +477,7 @@ function createRenderer(options) {
     }
   }
 
+  // 挂载元素
   function mountElement(vnode, container, anchor) {
     const el = (vnode.el = createElement(vnode.type));
     if (typeof vnode.children === "string") {
