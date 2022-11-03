@@ -498,22 +498,149 @@ function createRenderer(options) {
     }
   }
 
+  // resloveProps 函数用于解析组件 props 和 attrs 数据
+  function resloveProps(options, propsData) {
+    const props = {};
+    const attrs = {};
+    // 遍历为组件传递的 props 数据
+    for (const key in propsData) {
+      if (key in options) {
+        // 如果为组件传递的 props 数据在自身的 props 选项中有定义，则将其视为合法的 props
+        props[key] = propsData[key];
+      } else {
+        // 否则将其作为 attrs
+        attrs[key] = propsData[key];
+      }
+    }
+  }
+
+  // 检测 props 是否发生变化
+  function hasPropsChanged(preProps, nextProps) {
+    const nextKeys = Object.keys(nextProps);
+    // 如果新旧 props 数量变了，则说明有变化
+    if (nextKeys.length !== Object.keys(preProps).length) {
+      return true;
+    }
+
+    for (let i = 0; i < nextKeys.length; i++) {
+      const key = nextKeys[i];
+      if (nextProps[key] !== preProps[key]) return true;
+    }
+
+    return false;
+  }
+
   // 挂载组件
   function mountComponent(vnode, container, anchor) {
     const componentOptions = vnode.type;
-    const { render, data } = componentOptions;
+    const {
+      render,
+      data,
+      beforeCreate,
+      created,
+      beforeMounted,
+      mounted,
+      beforeUpdate,
+      updated,
+      props: propsOptions,
+    } = componentOptions;
+
+    beforeCreate && beforeCreate();
+
     const state = reactive(data());
+
+    const [props, attrs] = resloveProps(propsOptions, vnode.props);
+
+    // 定义组件实例，一个组件实例本质上就是一个对象，它包含于组件相关的状态信息
+    const instance = {
+      // 组件自身的状态数据，即data
+      state,
+      // 将解析出的 props 数据包装为 shallowReactive 并定义到组件实例上
+      props: shallowReactive(props),
+      // 一个布尔值，用来表示组件是否已经被挂载，初始值为false
+      isMounted: false,
+      // 组件所渲染的内容，即子树
+      subTree: null,
+    };
+
+    // 将组件实例设置到 vnode 上，用于后续更新
+    vnode.component = instance;
+
+    // 创建渲染上下文对象，本质上是组件实例的代理
+    const renderContext = new Proxy(instance, {
+      get(t, k, r) {
+        // 获取组件自身状态和 props 数据
+        const { state, props } = t;
+        // 先尝试读取自身状态数据
+        if (state && k in state) {
+          return state[key];
+        } else if (k in props) {
+          return props[k];
+        } else {
+          console.error("不存在");
+        }
+      },
+      set(t, k, v, r) {
+        const { state, props } = t;
+        if (state && k in state) {
+          state[k] = v;
+        } else if (k in props) {
+          console.warn(
+            'Attempting to mutate props "&{k}" . Props are readonly'
+          );
+        } else {
+          console.error("不存在");
+        }
+      },
+    });
+
+    created && created.call(renderContext);
+
     effect(
       () => {
         // 执行渲染函数，获取组件要渲染的内容，即 render 函数返回的虚拟 DOM
         const subTree = render.call(state, state);
-        // 最后调用 patch 函数来挂载组件所描述的内容
-        patch(null, subTree, container, anchor);
+        if (!instance.isMounted) {
+          beforeMounted && beforeMounted.call(renderContext);
+          // 初次挂载，调用 patch 函数第一个参数传递 null
+          patch(null, subTree, container, anchor);
+          // 重点：将组件实例的 isMounted 设置为 true ,这样当更新发生时就不会再次进行挂载操作，而是会执行更新
+          instance.isMounted = true;
+          mounted && mounted.call(renderContext);
+        } else {
+          beforeUpdate && beforeUpdate.call(renderContext);
+          patch(vnode.subTree, subTree, container, anchor);
+          updated && updated.call(renderContext);
+        }
+
+        // 更新组件实例的子树
+        instance.subTree = subTree;
       },
       {
         scheduler: queueJob,
       }
     );
+  }
+
+  // 更新组件
+  function patchComponent(n1, n2, anchor) {
+    // 获取组件实例，即 n1.component ，同时让 n2.component 也指向组件实例
+    const instance = (n2.component = n1.component);
+    // 获取当前的 props 数据
+    const { props } = instance;
+    // 调用 hasPropsChanged 检测为子组件传递的 props 是否发生变化，如果没有变化，则不需要更新
+    if (hasPropsChanged(n1.props, n2.props)) {
+      // 调用 resloveProps 函数重新获取 props 数据
+      const [nextProps] = resloveProps(n2.type.props, n2.props);
+      // 更新 props
+      for (const k in nextProps) {
+        props[k] = nextProps[k];
+      }
+      // 删除不存在的 props
+      for (const k in props) {
+        if (!(k in nextProps)) delete props[k];
+      }
+    }
   }
 
   // 挂载元素
