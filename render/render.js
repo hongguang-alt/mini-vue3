@@ -477,6 +477,45 @@ function createRenderer(options) {
     }
   }
 
+  // 调度器
+  const queue = new Set();
+  // 表示是否正在刷新任务队列
+  let isFlushing = false;
+  const p = new Promise.resolve();
+
+  function queueJob(job) {
+    queue.add(job);
+    if (!isFlushing) {
+      isFlushing = true;
+      p.then(() => {
+        try {
+          queue.forEach((job) => job());
+        } finally {
+          isFlushing = false;
+          queue.clear = 0;
+        }
+      });
+    }
+  }
+
+  // 挂载组件
+  function mountComponent(vnode, container, anchor) {
+    const componentOptions = vnode.type;
+    const { render, data } = componentOptions;
+    const state = reactive(data());
+    effect(
+      () => {
+        // 执行渲染函数，获取组件要渲染的内容，即 render 函数返回的虚拟 DOM
+        const subTree = render.call(state, state);
+        // 最后调用 patch 函数来挂载组件所描述的内容
+        patch(null, subTree, container, anchor);
+      },
+      {
+        scheduler: queueJob,
+      }
+    );
+  }
+
   // 挂载元素
   function mountElement(vnode, container, anchor) {
     const el = (vnode.el = createElement(vnode.type));
@@ -534,6 +573,11 @@ function createRenderer(options) {
       }
     } else if (typeof type === "object") {
       // 这里是对组件做处理
+      if (!n1) {
+        mountComponent(n2, container, anchor);
+      } else {
+        patchComponent(n1, n2, anchor);
+      }
     }
   }
   function render(vnode, container) {
