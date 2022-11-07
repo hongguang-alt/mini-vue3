@@ -543,11 +543,12 @@ function createRenderer(options) {
       beforeUpdate,
       updated,
       props: propsOptions,
+      setup,
     } = componentOptions;
 
     beforeCreate && beforeCreate();
 
-    const state = reactive(data());
+    const state = data ? reactive(data()) : null;
 
     const [props, attrs] = resloveProps(propsOptions, vnode.props);
 
@@ -563,6 +564,22 @@ function createRenderer(options) {
       subTree: null,
     };
 
+    const setupContext = { attrs };
+
+    const setupResult = setup(shallowReactive(instance.props), setupContext);
+
+    // setupResult 用来存储由 setup 返回的函数
+    let setupState = null;
+    // 如果 setup 函数返回的值是函数，则将其作为渲染函数
+    if (typeof setupResult === "function") {
+      if (render) console.error("setup 函数返回渲染函数,render 选项将被忽略");
+      // 将 setupResult 作为渲染函数
+      render = setupResult;
+    } else {
+      // 如果 setup 的返回值不是函数，则作为数据状态赋值给 setupState
+      setupState = setupResult;
+    }
+
     // 将组件实例设置到 vnode 上，用于后续更新
     vnode.component = instance;
 
@@ -576,6 +593,9 @@ function createRenderer(options) {
           return state[key];
         } else if (k in props) {
           return props[k];
+        } else if (setupResult && k in setupResult) {
+          // 渲染上下文需要增加对 setupState 的支持
+          return setupState[key];
         } else {
           console.error("不存在");
         }
@@ -585,9 +605,10 @@ function createRenderer(options) {
         if (state && k in state) {
           state[k] = v;
         } else if (k in props) {
-          console.warn(
-            'Attempting to mutate props "&{k}" . Props are readonly'
-          );
+          console.warn(`Attempting to mutate props ${k} . Props are readonly`);
+        } else if (setupState && k in setupState) {
+          // 渲染上下文需要增加对 setupState 的支持
+          setupState[k] = v;
         } else {
           console.error("不存在");
         }
