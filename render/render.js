@@ -48,6 +48,21 @@ const Text = Symbol();
 const Comment = Symbol();
 const Fragment = Symbol();
 
+// 全局变量，存储当前正在被初始化的组件实例
+const currentInstance = null;
+// 改方法接收组件实例作为参数，并将该实例设置为 currentInstance
+function setCurrentInstance(instance) {
+  currentInstance = instance;
+}
+
+function onMounted(fn) {
+  if (currentInstance) {
+    currentInstance.mounted.push(fn);
+  } else {
+    console.error("onMounted 函数只能在 setup 中调用");
+  }
+}
+
 function renderer(vnode, container) {
   const options = {
     createElement(tag) {
@@ -565,6 +580,8 @@ function createRenderer(options) {
       // 组件所渲染的内容，即子树
       subTree: null,
       slots,
+      // 在组件实例中添加 mounted 数组，用来存储 onMounted 函数注册的生命周期钩子函数
+      mounted: [],
     };
 
     /**
@@ -586,7 +603,13 @@ function createRenderer(options) {
 
     const setupContext = { attrs, emit, slots };
 
+    // 在调用 setup 函数之前，设置当前组件实例
+    setCurrentInstance(instance);
+
     const setupResult = setup(shallowReactive(instance.props), setupContext);
+
+    // 重置当前组件
+    setCurrentInstance(null);
 
     // setupResult 用来存储由 setup 返回的函数
     let setupState = null;
@@ -649,6 +672,8 @@ function createRenderer(options) {
           // 重点：将组件实例的 isMounted 设置为 true ,这样当更新发生时就不会再次进行挂载操作，而是会执行更新
           instance.isMounted = true;
           mounted && mounted.call(renderContext);
+          instance.mounted &&
+            instance.mounted.forEach((hook) => hook.call(renderContext));
         } else {
           beforeUpdate && beforeUpdate.call(renderContext);
           patch(vnode.subTree, subTree, container, anchor);
