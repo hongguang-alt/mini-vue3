@@ -552,6 +552,7 @@ function createRenderer(options) {
     const state = data ? reactive(data()) : null;
 
     const [props, attrs] = resloveProps(propsOptions, vnode.props);
+    const slots = vnode.children || {};
 
     // 定义组件实例，一个组件实例本质上就是一个对象，它包含于组件相关的状态信息
     const instance = {
@@ -563,6 +564,7 @@ function createRenderer(options) {
       isMounted: false,
       // 组件所渲染的内容，即子树
       subTree: null,
+      slots,
     };
 
     /**
@@ -582,7 +584,7 @@ function createRenderer(options) {
       }
     }
 
-    const setupContext = { attrs, emit };
+    const setupContext = { attrs, emit, slots };
 
     const setupResult = setup(shallowReactive(instance.props), setupContext);
 
@@ -605,7 +607,8 @@ function createRenderer(options) {
     const renderContext = new Proxy(instance, {
       get(t, k, r) {
         // 获取组件自身状态和 props 数据
-        const { state, props } = t;
+        const { state, props, slots } = t;
+        if (k === "$slots") return slots;
         // 先尝试读取自身状态数据
         if (state && k in state) {
           return state[key];
