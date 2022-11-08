@@ -504,7 +504,7 @@ function createRenderer(options) {
     const attrs = {};
     // 遍历为组件传递的 props 数据
     for (const key in propsData) {
-      if (key in options) {
+      if (key in options || key.startsWith("on")) {
         // 如果为组件传递的 props 数据在自身的 props 选项中有定义，则将其视为合法的 props
         props[key] = propsData[key];
       } else {
@@ -512,6 +512,7 @@ function createRenderer(options) {
         attrs[key] = propsData[key];
       }
     }
+    return [props, attrs];
   }
 
   // 检测 props 是否发生变化
@@ -564,7 +565,24 @@ function createRenderer(options) {
       subTree: null,
     };
 
-    const setupContext = { attrs };
+    /**
+     * 定义 emit 函数，它接收两个参数
+     * evnet: 事件名称
+     * payload: 传递给事件处理函数的参数
+     */
+    function emit(event, ...payload) {
+      // 根据约定对事件名称进行处理，例如 change => onChange
+      const eventName = `on${event[0].toUpperCase() + event.slice(1)}`;
+      // 根据处理后的事件名称去 props 中寻找对应的事件处理函数
+      const handler = instance.props[eventName];
+      if (handler) {
+        handler(...payload);
+      } else {
+        console.error("事件不存在");
+      }
+    }
+
+    const setupContext = { attrs, emit };
 
     const setupResult = setup(shallowReactive(instance.props), setupContext);
 
