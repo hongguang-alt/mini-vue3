@@ -548,7 +548,18 @@ function createRenderer(options) {
 
   // 挂载组件
   function mountComponent(vnode, container, anchor) {
+    // 检查是否是函数式组件
+    const isFunctional = typeof vnode.type === "function";
+
     const componentOptions = vnode.type;
+
+    if (isFunctional) {
+      componentOptions = {
+        render: vnode.type,
+        props: vnode.type.props,
+      };
+    }
+
     const {
       render,
       data,
@@ -765,7 +776,7 @@ function createRenderer(options) {
         // 如果旧的 vnode 存在，则更新 Fragment 的 children 就可以
         patchChildren(n1, n2, container);
       }
-    } else if (typeof type === "object") {
+    } else if (typeof type === "object" || typeof type === "function") {
       // 这里是对组件做处理
       if (!n1) {
         mountComponent(n2, container, anchor);
