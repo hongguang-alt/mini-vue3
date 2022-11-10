@@ -144,6 +144,14 @@ function createRenderer(options) {
     if (vnode.type === Fragment) {
       vnode.children.forEach((c) => unmounted(c));
       return;
+    } else if (typeof vnode.type === "object") {
+      // vnode.shouldKeepAlive 是一个布尔值，用来标识该组件是否应该被 KeepAlive
+      if (vnode.shouldKeepAlive) {
+        vnode.keepAliveInstance._deActivate(vnode);
+      } else {
+        unmounted(vnode.component.subTree);
+      }
+      return;
     }
     const parentNode = vnode.el.parentNode;
     if (parentNode) {
@@ -593,7 +601,19 @@ function createRenderer(options) {
       slots,
       // 在组件实例中添加 mounted 数组，用来存储 onMounted 函数注册的生命周期钩子函数
       mounted: [],
+      // 只有keepAlive 组件的实例下会有keepAliveCtx 属性
+      keepAliveCtx: null,
     };
+
+    const isKeepAlive = vnode.type._isKeepAlive;
+    if (isKeepAlive) {
+      instance.keepAliveCtx = {
+        move(vnode, container, anchor) {
+          insert(vnode.component.subTree.el, container, anchor);
+        },
+        createElement,
+      };
+    }
 
     /**
      * 定义 emit 函数，它接收两个参数
@@ -779,7 +799,11 @@ function createRenderer(options) {
     } else if (typeof type === "object" || typeof type === "function") {
       // 这里是对组件做处理
       if (!n1) {
-        mountComponent(n2, container, anchor);
+        if (n2.keptAlive) {
+          n2.keepAliveInstance._activate(n2, container, anchor);
+        } else {
+          mountComponent(n2, container, anchor);
+        }
       } else {
         patchComponent(n1, n2, anchor);
       }
