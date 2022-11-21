@@ -796,6 +796,19 @@ function createRenderer(options) {
         // 如果旧的 vnode 存在，则更新 Fragment 的 children 就可以
         patchChildren(n1, n2, container);
       }
+    } else if (typeof type === "object" || type._isTeleport) {
+      type.process(n1, n2, container, anchor, {
+        patch,
+        patchChildren,
+        // 用来移动被 Teleport 的内容
+        move(vnode, container, anchor) {
+          insert(
+            vnode.component ? vnode.component.subTree.el : vnode.el,
+            container,
+            anchor
+          );
+        },
+      });
     } else if (typeof type === "object" || typeof type === "function") {
       // 这里是对组件做处理
       if (!n1) {
