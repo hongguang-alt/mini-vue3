@@ -141,6 +141,7 @@ function createRenderer(options) {
   } = options;
 
   function unmounted(vnode) {
+    const needTransition = vnode.transition;
     if (vnode.type === Fragment) {
       vnode.children.forEach((c) => unmounted(c));
       return;
@@ -155,7 +156,13 @@ function createRenderer(options) {
     }
     const parentNode = vnode.el.parentNode;
     if (parentNode) {
-      parentNode.removeChild(vnode.el);
+      const performRemove = () => parentNode.removeChild(vnode.el);
+      if (needTransition) {
+        vnode.transition.leave(vnode.el, performRemove);
+      } else {
+        // 如果不需要执行过渡处理，则直接执行卸载操作
+        performRemove();
+      }
     }
   }
 
@@ -759,7 +766,17 @@ function createRenderer(options) {
       }
     }
 
+    // 判断一个 VNode 是否需要过渡
+    const needTransition = vnode.transition;
+    if (needTransition) {
+      vnode.transition.beforeEnter(el);
+    }
+
     insert(el, container, anchor);
+
+    if (needTransition) {
+      vnode.transition.enter(el);
+    }
   }
   function patch(n1, n2, container, anchor) {
     // 如果新旧vnode的类型不同，就直接卸载
