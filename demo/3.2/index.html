@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Demo</title>
+  </head>
+  <body>
+    <script>
+      const vDom = {
+        tag: "div",
+        props: {
+          onClick: function () {
+            alert("hello");
+          },
+        },
+        children: "click me",
+      };
+
+      function render(vdom,contanier){
+        const dom = document.createElement(vdom.tag)
+
+        for(let key in vdom.props){
+            if(/^on/.test(key)){
+                let event = key.substr(2).toLocaleLowerCase()
+                dom.addEventListener(event,vdom.props[key])
+            }
+        }
+
+        if(vdom.children){
+            if(typeof vdom.children === "string"){
+                const textDom = document.createTextNode(vdom.children)
+                dom.append(textDom)
+            }
+        }
+
+        contanier.append(dom)
+      }
+
+      render(vDom,document.body)
+    </script>
+  </body>
+</html>

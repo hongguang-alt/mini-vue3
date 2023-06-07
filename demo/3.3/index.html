@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Demo</title>
+  </head>
+  <body>
+    <script>
+      function MyComponent() {
+        return {
+          tag: "h1",
+          props: {
+            onClick: function () {
+              alert("我是一个组件");
+            },
+          },
+          children: "I am a component",
+        };
+      }
+
+      var MyComponent1 = {
+        render() {
+          return {
+            tag: "h2",
+            children: "I am a component1",
+          };
+        },
+      };
+
+      const vDom = {
+        tag: "div",
+        props: {
+          onClick: function () {
+            alert("hello");
+          },
+        },
+        children: [
+          {
+            tag: "span",
+            children: "click me",
+          },
+          {
+            tag: MyComponent,
+          },
+          {
+            tag: MyComponent1,
+          },
+        ],
+      };
+
+      function mountElement(vnode, contanier) {
+        const dom = document.createElement(vnode.tag);
+
+        if (vnode.props) {
+          for (let key in vnode.props) {
+            if (/^on/.test(key)) {
+              let event = key.substr(2).toLocaleLowerCase();
+              dom.addEventListener(event, vnode.props[key]);
+            }
+          }
+        }
+
+        if (vnode.children) {
+          if (typeof vnode.children === "string") {
+            const textDom = document.createTextNode(vnode.children);
+            dom.append(textDom);
+          } else if (Array.isArray(vnode.children)) {
+            vnode.children.forEach((item) => render(item, dom));
+          }
+        }
+
+        contanier.append(dom);
+      }
+
+      function mountComponent(vnode, contanier) {
+        let subtree =
+          typeof vnode.tag === "function" ? vnode.tag() : vnode.tag.render();
+        // 渲染构建
+        render(subtree, contanier);
+      }
+
+      function render(vnode, contanier) {
+        if (typeof vnode.tag === "string") {
+          mountElement(vnode, contanier);
+        } else if (
+          typeof vnode.tag === "object" ||
+          typeof vnode.tag === "function"
+        ) {
+          mountComponent(vnode, contanier);
+        }
+      }
+
+      render(vDom, document.body);
+    </script>
+  </body>
+</html>
