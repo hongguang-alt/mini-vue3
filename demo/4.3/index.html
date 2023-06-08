@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>4.3</title>
+  </head>
+  <body></body>
+  <script>
+    // 初始化
+    let activeEffect = null;
+    // 创建桶，使用弱引用
+    let bucket = new WeakMap();
+
+    const data = {
+      text: "obj-text",
+    };
+
+    // 收集
+    function track(target, key) {
+      if (!activeEffect) return;
+      let depsMap = bucket.get(target);
+
+      if (!depsMap) {
+        bucket.set(target, (depsMap = new Map()));
+      }
+      let deps = depsMap.get(key);
+      if (!deps) {
+        depsMap.set(key, (deps = new Set()));
+      }
+      deps.add(activeEffect);
+    }
+
+    // 触发
+    function trigger(target, key) {
+      let depsMap = bucket.get(target);
+      if (!depsMap) return;
+
+      const effects = depsMap.get(key);
+      console.log(effects);
+
+      effects &&
+        effects.forEach((fn) => {
+          fn();
+        });
+    }
+
+    // 副作用函数
+    function effect(fn) {
+      activeEffect = fn;
+      fn();
+    }
+
+    const obj = new Proxy(data, {
+      get(target, key) {
+        track(target, key);
+        return target[key];
+      },
+      set(target, key, newVal) {
+        target[key] = newVal;
+        trigger(target, key);
+      },
+    });
+
+    // 包含 key 的副作用存在 key 里面
+    effect(() => {
+      document.body.innerHTML = obj.text;
+      console.log(obj.text);
+    });
+
+    setTimeout(() => {
+      obj.text = "111";
+    }, 1000);
+
+    // activeEffect 的作用是什么？
+    /**
+     * 链接变量和当前副作用函数的
+     * 因为js是单线程，单个只能运行一个函数。
+     * 运行当前函数的时候，把这个函数赋值给activeEffect，然后所有遇到的变量都在这个函数内，所以副作用函数就是当前的 activeEffect
+     */
+  </script>
+</html>
