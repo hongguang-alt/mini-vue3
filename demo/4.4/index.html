@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>4.3</title>
+    <title>4.4</title>
   </head>
   <body></body>
   <script>
@@ -31,6 +31,8 @@
         depsMap.set(key, (deps = new Set()));
       }
       deps.add(activeEffect);
+      // 建立双向的依赖
+      activeEffect.deps.push(deps);
     }
 
     // 触发
@@ -40,16 +42,38 @@
 
       const effects = depsMap.get(key);
 
-      effects &&
-        effects.forEach((fn) => {
-          fn();
-        });
+      //   effects &&
+      //     effects.forEach((fn) => {
+      //       fn();
+      //     });
+      // 为了防止循环
+      const effectsToRun = new Set(effects);
+      effectsToRun.forEach((fn) => fn());
     }
 
     // 副作用函数
     function effect(fn) {
-      activeEffect = fn;
-      fn();
+      const effectFn = () => {
+        cleanup(effectFn);
+        // 这种写法第一次遇见，在内部把外部的函数直接进行赋值了
+        activeEffect = effectFn;
+        fn();
+      };
+
+      // 设置当前活跃的副作用函数
+      effectFn.deps = [];
+      effectFn();
+    }
+
+    // 清除遗留的副作用函数
+    function cleanup(effectFn) {
+      for (let i = 0; i < effectFn.deps.length; i++) {
+        let deps = effectFn.deps[i];
+        // 删除当前的函数
+        deps.delete(effectFn);
+      }
+      // 重置
+      effectFn.deps.length = 0;
     }
 
     const obj = new Proxy(data, {
@@ -84,5 +108,12 @@
     setTimeout(() => {
       obj.text = "hahha";
     }, 3000);
+
+    /**
+     * 解决方案：
+     * 在每次执行前，把这个副作用函数从依赖中去掉
+     * 然后副作用函数在执行的时候又会重新添加，这时候的添加就是按照当前的状态来的
+     * 就比如说，再次添加的时候，obj.ok为false，这样就不会有obj.text这个了
+     */
   </script>
 </html>
