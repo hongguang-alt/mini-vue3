@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>4.7</title>
+  </head>
+  <body></body>
+  <script>
+    // 初始化
+    let activeEffect = null;
+    var effectStack = [];
+    // 创建桶，使用弱引用
+    let bucket = new WeakMap();
+
+    // 收集
+    function track(target, key) {
+      if (!activeEffect) return;
+      let depsMap = bucket.get(target);
+
+      if (!depsMap) {
+        bucket.set(target, (depsMap = new Map()));
+      }
+      let deps = depsMap.get(key);
+      if (!deps) {
+        depsMap.set(key, (deps = new Set()));
+      }
+      deps.add(activeEffect);
+      // 建立双向的依赖
+      activeEffect.deps.push(deps);
+    }
+
+    // 触发
+    function trigger(target, key) {
+      let depsMap = bucket.get(target);
+      if (!depsMap) return;
+
+      const effects = depsMap.get(key);
+      const effectsToRun = new Set();
+      effects &&
+        effects.forEach((effectFn) => {
+          // 为了防止死循环，判断需要执行的函数和当前的副作用函数是否一致
+          if (effectFn !== activeEffect) {
+            effectsToRun.add(effectFn);
+          }
+        });
+      effectsToRun.forEach((fn) => {
+        // 如何一个副作用函数有调度器，就执行调度器
+        if (fn.options.scheduler) {
+          fn.options.scheduler(fn);
+        } else {
+          fn();
+        }
+      });
+    }
+
+    // 副作用函数
+    function effect(fn, options = {}) {
+      const effectFn = () => {
+        cleanup(effectFn);
+        // 这种写法第一次遇见，在内部把外部的函数直接进行赋值了
+        activeEffect = effectFn;
+        // 新增：入栈
+        effectStack.push(effectFn);
+        fn();
+        // 新增：出栈
+        effectStack.pop();
+        activeEffect = effectStack[effectStack.length - 1];
+      };
+
+      // 将参数传给函数
+      effectFn.options = options;
+      // 设置当前活跃的副作用函数
+      effectFn.deps = [];
+      effectFn();
+    }
+
+    // 清除遗留的副作用函数
+    function cleanup(effectFn) {
+      for (let i = 0; i < effectFn.deps.length; i++) {
+        let deps = effectFn.deps[i];
+        // 删除当前的函数
+        deps.delete(effectFn);
+      }
+      // 重置
+      effectFn.deps.length = 0;
+    }
+
+    const jobQueue = new Set();
+    // 使用 Promise.resolve() 创建一个 promise 实例，我们用它将一个任务添加到微任务队列
+    const p = Promise.resolve();
+
+    // 一个标志代表是否正在刷新队列
+    let isFlushing = false;
+    function flushJob() {
+      if (isFlushing) return;
+      isFlushing = true;
+      p.then(() => {
+        jobQueue.forEach((job) => {
+          job();
+        });
+      }).finally(() => {
+        isFlushing = false;
+      });
+    }
+
+    // 执行的代码
+    const data = {
+      foo: 1,
+    };
+
+    const obj = new Proxy(data, {
+      get(target, key) {
+        track(target, key);
+        return target[key];
+      },
+      set(target, key, newVal) {
+        target[key] = newVal;
+        trigger(target, key);
+      },
+    });
+
+    effect(
+      function effectFn1() {
+        console.log(obj.foo);
+      },
+      {
+        // 实现调度器，将控制权交给用户
+        scheduler(fn) {
+          // 每次调度时，将副作用函数添加到 jobQueue 中
+          jobQueue.add(fn);
+          // 调用 flushJob 刷新队列
+          flushJob();
+        },
+      }
+    );
+    obj.foo++;
+    obj.foo++;
+    obj.foo++;
+    // 这个功能有点类似于在 Vue.js 中连续多次修改响应式数据但只会触发一次更新
+    // 实际上 Vue 内部实现了一个更加完善的调度器，思路和上文介绍的相同
+  </script>
+</html>
