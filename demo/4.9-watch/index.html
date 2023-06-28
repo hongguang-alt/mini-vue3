@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>4.9 watch的实现</title>
+  </head>
+  <body></body>
+  <script>
+    // 初始化
+    let activeEffect = null;
+    var effectStack = [];
+    // 创建桶，使用弱引用
+    let bucket = new WeakMap();
+
+    // 收集
+    function track(target, key) {
+      if (!activeEffect) return;
+      let depsMap = bucket.get(target);
+
+      if (!depsMap) {
+        bucket.set(target, (depsMap = new Map()));
+      }
+      let deps = depsMap.get(key);
+      if (!deps) {
+        depsMap.set(key, (deps = new Set()));
+      }
+      deps.add(activeEffect);
+      // 建立双向的依赖
+      activeEffect.deps.push(deps);
+    }
+
+    // 触发
+    function trigger(target, key) {
+      let depsMap = bucket.get(target);
+      if (!depsMap) return;
+
+      const effects = depsMap.get(key);
+      const effectsToRun = new Set();
+      effects &&
+        effects.forEach((effectFn) => {
+          // 为了防止死循环，判断需要执行的函数和当前的副作用函数是否一致
+          if (effectFn !== activeEffect) {
+            effectsToRun.add(effectFn);
+          }
+        });
+      effectsToRun.forEach((fn) => {
+        // 如何一个副作用函数有调度器，就执行调度器
+        if (fn.options.scheduler) {
+          fn.options.scheduler(fn);
+        } else {
+          fn();
+        }
+      });
+    }
+
+    // 副作用函数
+    function effect(fn, options = {}) {
+      const effectFn = () => {
+        cleanup(effectFn);
+        // 这种写法第一次遇见，在内部把外部的函数直接进行赋值了
+        activeEffect = effectFn;
+        // 新增：入栈
+        effectStack.push(effectFn);
+        // 4.8新增
+        let res = fn();
+        // 新增：出栈
+        effectStack.pop();
+        activeEffect = effectStack[effectStack.length - 1];
+        // 4.8 新增
+        return res;
+      };
+
+      // 将参数传给函数
+      effectFn.options = options;
+      // 设置当前活跃的副作用函数
+      effectFn.deps = [];
+      // 新增 4.8: 如果不是懒加载就执行，否则就返回
+      if (!options.lazy) {
+        effectFn();
+      }
+      // 将副作用函数返回
+      return effectFn;
+    }
+
+    // 清除遗留的副作用函数
+    function cleanup(effectFn) {
+      for (let i = 0; i < effectFn.deps.length; i++) {
+        let deps = effectFn.deps[i];
+        // 删除当前的函数
+        deps.delete(effectFn);
+      }
+      // 重置
+      effectFn.deps.length = 0;
+    }
+
+    function traverse(value, seen = new Set()) {
+      if (typeof value !== "object" || value === null || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      for (const key in value) {
+        traverse(value[key], seen);
+      }
+    }
+
+    function computed(getter) {
+      const effectFn = effect(getter, {
+        lazy: true,
+        // 使用调度器，当 getter 中的值变化的时候，下一次获取值的时候，才会重新计算
+        scheduler: () => {
+          dirty = true;
+          // 手动更新
+          trigger(obj, "value");
+        },
+      });
+      let value;
+      let dirty = true;
+
+      let obj = {
+        get value() {
+          if (dirty) {
+            console.log("重新计算");
+            value = effectFn();
+            dirty = false;
+          }
+          // 手动追踪
+          track(obj, "value");
+          return value;
+        },
+      };
+
+      return obj;
+    }
+
+    function watch(source, cb, options = {}) {
+      let getter;
+      if (typeof source === "function") {
+        getter = source;
+      } else {
+        getter = () => traverse(source);
+      }
+      let oldValue, newValue;
+
+      let cleanup;
+      function onInvalidate(fn) {
+        cleanup = fn;
+      }
+      const job = () => {
+        newValue = effectFn();
+        if (cleanup) {
+          cleanup();
+        }
+        cb(newValue, oldValue);
+        oldValue = newValue;
+      };
+
+      // 这里只需要调用需要监听的值就可以了
+      const effectFn = effect(() => getter(), {
+        lazy: true,
+        scheduler() {
+          // 4.10 新增——fn 和 effectFn 确实是相等的
+          // console.log(fn === effectFn, "watch");
+          // 重新执行会得到新值
+          job();
+        },
+      });
+      if (options.immediate) {
+        job();
+      } else {
+        oldValue = effectFn();
+      }
+    }
+
+    // 执行的代码
+    const data = {
+      foo: 1,
+      bar: 2,
+    };
+
+    const obj = new Proxy(data, {
+      get(target, key) {
+        track(target, key);
+        return target[key];
+      },
+      set(target, key, newVal) {
+        target[key] = newVal;
+        trigger(target, key);
+      },
+    });
+
+    /**
+     * 实现 watch 的原理。所谓 watch 本质上就是观测一个响应式的数据，当数据发生变化时
+     */
+
+    watch(
+      () => obj.bar + obj.foo,
+      (newVal, oldVal) => {
+        console.log(newVal, oldVal);
+      },
+      {
+        immediate: true,
+      }
+    );
+    obj.bar++;
+
+    /**
+     * 如何获取新值和旧值，这需要利用 effect 函数的 lazy 选项
+     * lazy 是在 effect函数 执行的时候起作用的
+     * scheduler 是在执行 effectFn 函数的时候起作用的，也就是执行回调函数的时候，可以在 scheduler 中执行
+     *
+     */
+
+    /**
+     * 4.11 副作用过期
+     * 如果 watch 监听的两个事件是异步的，A 的副作用执行赋值的时候，B 的副作用已经回来了，这时候就会把 A 的副作用给抛弃掉
+     * 通过作用域的方式进行参数隔离
+     */
+
+    /**
+     * scheduler 中是有回调函数参数的，没有执行，当前没有执行 fn ，但是执行了 effectFn 函数，这两个是相等的
+     */
+  </script>
+</html>
