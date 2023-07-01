@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>5.3 如何代理 Object</title>
+  </head>
+  <body></body>
+  <script>
+    const ITERATE_KEY = Symbol();
+  </script>
+  <script>
+    // 初始化
+    let activeEffect = null;
+    var effectStack = [];
+    // 创建桶，使用弱引用
+    let bucket = new WeakMap();
+
+    // 收集
+    function track(target, key) {
+      if (!activeEffect) return;
+      let depsMap = bucket.get(target);
+
+      if (!depsMap) {
+        bucket.set(target, (depsMap = new Map()));
+      }
+      let deps = depsMap.get(key);
+      if (!deps) {
+        depsMap.set(key, (deps = new Set()));
+      }
+      deps.add(activeEffect);
+      // 建立双向的依赖
+      activeEffect.deps.push(deps);
+    }
+
+    // 触发
+    function trigger(target, key, type) {
+      let depsMap = bucket.get(target);
+      if (!depsMap) return;
+
+      const effects = depsMap.get(key);
+      const iterateEffects = depsMap.get(ITERATE_KEY);
+      const effectsToRun = new Set();
+      effects &&
+        effects.forEach((effectFn) => {
+          // 为了防止死循环，判断需要执行的函数和当前的副作用函数是否一致
+          if (effectFn !== activeEffect) {
+            effectsToRun.add(effectFn);
+          }
+        });
+
+      // 如果是添加或者删除
+      if (type === "ADD" || type === "DELETE") {
+        // 针对 for...in 触发的对应的函数
+        iterateEffects &&
+          iterateEffects.forEach((effectFn) => {
+            if (effectFn !== activeEffect) {
+              effectsToRun.add(effectFn);
+            }
+          });
+      }
+
+      effectsToRun.forEach((fn) => {
+        // 如何一个副作用函数有调度器，就执行调度器
+        if (fn.options.scheduler) {
+          fn.options.scheduler(fn);
+        } else {
+          fn();
+        }
+      });
+    }
+
+    // 副作用函数
+    function effect(fn, options = {}) {
+      const effectFn = () => {
+        cleanup(effectFn);
+        // 这种写法第一次遇见，在内部把外部的函数直接进行赋值了
+        activeEffect = effectFn;
+        // 新增：入栈
+        effectStack.push(effectFn);
+        // 4.8新增
+        let res = fn();
+        // 新增：出栈
+        effectStack.pop();
+        activeEffect = effectStack[effectStack.length - 1];
+        // 4.8 新增
+        return res;
+      };
+
+      // 将参数传给函数
+      effectFn.options = options;
+      // 设置当前活跃的副作用函数
+      effectFn.deps = [];
+      // 新增 4.8: 如果不是懒加载就执行，否则就返回
+      if (!options.lazy) {
+        effectFn();
+      }
+      // 将副作用函数返回
+      return effectFn;
+    }
+
+    // 清除遗留的副作用函数
+    function cleanup(effectFn) {
+      for (let i = 0; i < effectFn.deps.length; i++) {
+        let deps = effectFn.deps[i];
+        // 删除当前的函数
+        deps.delete(effectFn);
+      }
+      // 重置
+      effectFn.deps.length = 0;
+    }
+
+    function traverse(value, seen = new Set()) {
+      if (typeof value !== "object" || value === null || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      for (const key in value) {
+        traverse(value[key], seen);
+      }
+    }
+
+    function computed(getter) {
+      const effectFn = effect(getter, {
+        lazy: true,
+        // 使用调度器，当 getter 中的值变化的时候，下一次获取值的时候，才会重新计算
+        scheduler: () => {
+          dirty = true;
+          // 手动更新
+          trigger(obj, "value");
+        },
+      });
+      let value;
+      let dirty = true;
+
+      let obj = {
+        get value() {
+          if (dirty) {
+            console.log("重新计算");
+            value = effectFn();
+            dirty = false;
+          }
+          // 手动追踪
+          track(obj, "value");
+          return value;
+        },
+      };
+
+      return obj;
+    }
+
+    function watch(source, cb, options = {}) {
+      let getter;
+      if (typeof source === "function") {
+        getter = source;
+      } else {
+        getter = () => traverse(source);
+      }
+      let oldValue, newValue;
+
+      let cleanup;
+      function onInvalidate(fn) {
+        cleanup = fn;
+      }
+      const job = () => {
+        newValue = effectFn();
+        if (cleanup) {
+          cleanup();
+        }
+        cb(newValue, oldValue);
+        oldValue = newValue;
+      };
+
+      // 这里只需要调用需要监听的值就可以了
+      const effectFn = effect(() => getter(), {
+        lazy: true,
+        scheduler() {
+          // 4.10 新增——fn 和 effectFn 确实是相等的
+          // console.log(fn === effectFn, "watch");
+          // 重新执行会得到新值
+          job();
+        },
+      });
+      if (options.immediate) {
+        job();
+      } else {
+        oldValue = effectFn();
+      }
+    }
+  </script>
+  <script>
+    // 执行的代码
+    const obj = {
+      foo: 1,
+    };
+
+    // 要使用 Reflect 来实现 this 的代理
+    const p = new Proxy(obj, {
+      get(target, key, receiver) {
+        // 追踪
+        track(target, key);
+        return Reflect.get(target, key, receiver);
+      },
+      set(target, key, newVal, receiver) {
+        // 代理
+        // target[key] = newVal;
+        const type = Object.prototype.hasOwnProperty.call(target, key)
+          ? "SET"
+          : "ADD";
+        const res = Reflect.set(target, key, newVal, receiver);
+        if (newVal === target[key]) {
+          trigger(target, key, type);
+        }
+        return res;
+      },
+      // 对于 in 操作符的监听
+      has(target, key) {
+        track(target, key);
+        return Reflect.has(target, key);
+      },
+      // 对于 for...in 操作符的拦截，什么时候触发？对于当前对象添加一个新的值的时候触发
+      ownKeys(target) {
+        track(target, ITERATE_KEY);
+        return Reflect.ownKeys(target);
+      },
+      // 对于删除的代理
+      deleteProperty(target, key, receiver) {
+        console.log("delete");
+        const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+        const res = Reflect.deleteProperty(target, key, receiver);
+        if (hadKey && res) {
+          trigger(target, key, "DELETE");
+        }
+        return res;
+      },
+    });
+
+    effect(() => {
+      console.log(p.foo);
+    });
+
+    p.foo = 2;
+  </script>
+</html>
