@@ -9,6 +9,31 @@
   <body></body>
   <script>
     const ITERATE_KEY = Symbol();
+    const arrayInsturmentations = {};
+    let shouldTrack = true;
+    [
+      // 代理数组的一些方法
+      ("includes", "indexOf", "lastIndexOf"),
+    ].forEach((method) => {
+      const originMethod = Array.prototype[method];
+      arrayInsturmentations[method] = function (...args) {
+        let res = originMethod.apply(this, args);
+        if (res === false || res === -1) {
+          res = originMethod.apply(this.row, args);
+        }
+        return res;
+      };
+    });
+    // 重写会修改数组长度的代码
+    ["push", "pop", "shift", "unshift", "splice"].forEach((method) => {
+      const originMethod = Array.prototype[method];
+      arrayInsturmentations[method] = function (...args) {
+        shouldTrack = false;
+        let res = originMethod.apply(this, args);
+        shouldTrack = true;
+        return res;
+      };
+    });
   </script>
   <script>
     // 初始化
@@ -19,7 +44,7 @@
 
     // 收集
     function track(target, key) {
-      if (!activeEffect) return;
+      if (!activeEffect || !shouldTrack) return;
       let depsMap = bucket.get(target);
 
       if (!depsMap) {
@@ -219,6 +244,15 @@
           if (key === "row") {
             return target;
           }
+
+          // 代理数组的方法
+          if (
+            Array.isArray(target) &&
+            arrayInsturmentations.hasOwnProperty(key)
+          ) {
+            return Reflect.get(arrayInsturmentations, key, receiver);
+          }
+
           if (!isReadonly && typeof key !== "symbol") {
             // 追踪
             track(target, key);
@@ -281,8 +315,18 @@
         },
       });
     }
+
+    // 生成 new Map，用来修复
+    const reactiveMap = new Map();
+
     function reactive(data) {
-      return createReactive(data);
+      const existProxyInstance = reactiveMap.get(data);
+      if (existProxyInstance) {
+        return existProxyInstance;
+      }
+      const proxy = createReactive(data);
+      reactiveMap.set(data, proxy);
+      return proxy;
     }
     function shallowReactive(data) {
       return createReactive(data, true);
@@ -297,22 +341,40 @@
     }
   </script>
   <script>
-    const arr = reactive(["foo"]);
-    effect(() => {
-      // console.log(arr.length); // 'foo'
-      for (const key in arr) {
-        console.log(key);
-      }
-    });
+    // const arr = reactive(["foo"]);
+    // effect(() => {
+    //   // console.log(arr.length); // 'foo'
+    //   for (const key in arr) {
+    //     console.log(key);
+    //   }
+    // });
 
-    arr[1] = "bar";
-    arr.length = 0;
+    // arr[1] = "bar";
+    // arr.length = 0;
     /**
      * 代理数组其实和代理对象差不多，但是有些点需要特殊处理
      * 1.关于length处理，修改长度大于length的可以，length会变，同样修改length，关于arr[key]也会变化
      * 2.关于 for...in 的处理，不建议数组使用，但是还是需要考虑
      *   - 可以使用ownkeys处理，这时候直接追踪到对应的 length 就可以了
      * 3.关于 for...of 的处理，这里 for...of 是处理对应的迭代器，不需要增加额外的代码
+     * 4.关于数组的查找方法
+     * 5.隐式修改数组长度的原型方法
      */
+
+    const obj = {};
+    const arr = reactive([obj]);
+    /**
+     * 不生效的原因主要是因为，arr[0] 会生成一个代理对象，includes 查找的时候也会生成一个代理对象
+     * 这两个代理对象每次都会重新生成，所以不会相等
+     */
+    console.log(arr.includes(obj));
+
+    const brr = reactive([]);
+    effect(() => {
+      brr.push(1);
+    });
+    effect(() => {
+      brr.push(2);
+    });
   </script>
 </html>
