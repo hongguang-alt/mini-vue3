@@ -36,6 +36,23 @@
     });
   </script>
   <script>
+    const iteratorMethod = function () {
+      const target = this.row;
+      const iterator = target[Symbol.iterator]();
+      const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+      return {
+        next() {
+          const { value, done } = iterator.next();
+          return {
+            value: value ? [wrap(value[0]), wrap(value[1])] : value,
+            done,
+          };
+        },
+        [Symbol.iterator]() {
+          return this;
+        },
+      };
+    };
     const mutableInstrumentations = {
       // set 的 add 方法
       add(key) {
@@ -87,6 +104,17 @@
         }
         return res;
       },
+      // 针对 forEach 方法
+      forEach(callback, thisArg) {
+        const target = this.row;
+        const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+        track(target, ITERATE_KEY);
+        return target.forEach((v, k) => {
+          callback.call(thisArg, wrap(v), wrap(k), this);
+        });
+      },
+      [Symbol.iterator]: iteratorMethod,
+      entries: iteratorMethod,
     };
   </script>
   <script>
@@ -130,7 +158,11 @@
         });
 
       // 如果是添加或者删除
-      if (type === "ADD" || type === "DELETE") {
+      if (
+        type === "ADD" ||
+        type === "DELETE" ||
+        (type === "SET" && target instanceof Map)
+      ) {
         // 针对 for...in 触发的对应的函数
         iterateEffects &&
           iterateEffects.forEach((effectFn) => {
@@ -423,13 +455,44 @@
     // });
     // mp.set("10", "111");
 
-    const m = new Map();
-    const p1 = reactive(m);
-    const p2 = reactive(new Map());
-    p1.set("p2", p2);
+    // const m = new Map();
+    // const p1 = reactive(m);
+    // const p2 = reactive(new Map());
+    // p1.set("p2", p2);
+    // effect(() => {
+    //   console.log(m.get("p2").size);
+    // });
+    // m.get("p2").set("foo", 1);
+
+    // const key = { key: 1 };
+    // const value = new Set([1, 2, 3]);
+    // const p = reactive(new Map([[key, value]]));
+
+    // effect(() => {
+    //   p.forEach(function (value, key) {
+    //     console.log(value.size);
+    //   });
+    // });
+
+    // p.get(key).add(5);
+
+    // 关于迭代器，其实就是实现了 Symbol.iterator
+
+    const p = reactive(
+      new Map([
+        [1, 1],
+        [2, 2],
+      ])
+    );
     effect(() => {
-      console.log(m.get("p2").size);
+      for (const [key, value] of p) {
+        console.log(key, value);
+      }
+      for (const [key, value] of p.entries()) {
+        console.log(key, value);
+      }
     });
-    m.get("p2").set("foo", 1);
+
+    p.set(3, 3);
   </script>
 </html>
