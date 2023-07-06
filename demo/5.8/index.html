@@ -9,6 +9,7 @@
   <body></body>
   <script>
     const ITERATE_KEY = Symbol();
+    const MAP_ITERATE_KEY = Symbol();
     const arrayInsturmentations = {};
     let shouldTrack = true;
     [
@@ -36,9 +37,28 @@
     });
   </script>
   <script>
+    const valuesKeysIteratorMethods = function (item) {
+      const target = this.row;
+      const iterator = target[item]();
+      track(target, MAP_ITERATE_KEY);
+      const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+      return {
+        next() {
+          const { value, done } = iterator.next();
+          return {
+            value: value ? wrap(value) : value,
+            done,
+          };
+        },
+        [Symbol.iterator]() {
+          return this;
+        },
+      };
+    };
     const iteratorMethod = function () {
       const target = this.row;
       const iterator = target[Symbol.iterator]();
+      track(target, ITERATE_KEY);
       const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
       return {
         next() {
@@ -115,6 +135,12 @@
       },
       [Symbol.iterator]: iteratorMethod,
       entries: iteratorMethod,
+      keys: function () {
+        return valuesKeysIteratorMethods.call(this, "keys");
+      },
+      values: function () {
+        return valuesKeysIteratorMethods.call(this, "values");
+      },
     };
   </script>
   <script>
@@ -148,6 +174,7 @@
 
       const effects = depsMap.get(key);
       const iterateEffects = depsMap.get(ITERATE_KEY);
+      const mapIterateEffects = depsMap.get(MAP_ITERATE_KEY);
       const effectsToRun = new Set();
       effects &&
         effects.forEach((effectFn) => {
@@ -171,6 +198,17 @@
             }
           });
       }
+
+      // 针对 map 的 keys 和 values 做的特殊处理
+      if ((type === "ADD" || type === "DELETE") && target instanceof Map) {
+        mapIterateEffects &&
+          mapIterateEffects.forEach((effectFn) => {
+            if (effectFn !== activeEffect) {
+              effectsToRun.add(effectFn);
+            }
+          });
+      }
+
       // 针对数组做特殊处理，如果是数组的添加，所有的 length 其实要做对应的响应式处理
       if (type === "ADD" && Array.isArray(target)) {
         const effects = depsMap.get("length");
@@ -485,14 +523,18 @@
       ])
     );
     effect(() => {
-      for (const [key, value] of p) {
-        console.log(key, value);
-      }
-      for (const [key, value] of p.entries()) {
-        console.log(key, value);
+      // for (const [key, value] of p) {
+      //   console.log(key, value);
+      // }
+      // for (const [key, value] of p.entries()) {
+      //   console.log(key, value);
+      // }
+      for (const key of p.keys()) {
+        console.log(key);
       }
     });
 
-    p.set(3, 3);
+    p.set(2, 3);
+    console.log(p.row);
   </script>
 </html>
