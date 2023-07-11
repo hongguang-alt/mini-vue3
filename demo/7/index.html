@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>7 渲染器的设计</title>
+  </head>
+  <script src="https://cdn.jsdelivr.net/npm/@vue/reactivity@3.3.4/dist/reactivity.global.min.js"></script>
+  <body>
+    <div id="app"></div>
+  </body>
+  <script>
+    const { effect, ref } = VueReactivity;
+    // 浏览器环境
+    // 创建元素
+    function createElement(tag) {
+      return document.createElement(tag);
+    }
+    // 设置文本节点
+    function setElementText(el, text) {
+      el.textContent = text;
+    }
+    // 用于插入
+    function insert(el, parent, anchor = null) {
+      parent.insertBefore(el, anchor);
+    }
+    // 创建渲染器
+    function createRenderer(options) {
+      const { createElement, setElementText, insert } = options;
+      function mountElement(vnode, container) {
+        if (typeof vnode.type === "string") {
+          const el = createElement(vnode.type);
+          setElementText(el, vnode.children);
+          insert(el, container);
+        } else {
+          // 组件类型
+        }
+      }
+
+      function patch(n1, n2, container) {
+        if (!n1) {
+          mountElement(n2, container);
+        } else {
+          // 需要打补丁
+        }
+      }
+
+      // 渲染
+      function render(vnode, container) {
+        if (vnode) {
+          patch(container._vnode, vnode, container);
+        } else {
+          if (container._vnode) {
+            container.innerHTML = "";
+            // 卸载
+            // unmount(container._vnode, container);
+          }
+        }
+        container._vnode = vnode;
+      }
+      return {
+        render,
+      };
+    }
+    const render = createRenderer({
+      createElement,
+      setElementText,
+      insert,
+    });
+
+    const count = ref(1);
+
+    effect(() => {
+      const vnode = {
+        type: "h1",
+        children: count.value,
+      };
+      render.render(vnode, document.getElementById("app"));
+    });
+    setTimeout(() => {
+      count.value++;
+    }, 1000);
+  </script>
+</html>
