@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>8.1 挂载子节点和元素的属性</title>
+    <title>8.4 class 的处理 8.5 卸载操作 8.6 区分vnode的类型</title>
   </head>
   <script src="https://cdn.jsdelivr.net/npm/@vue/reactivity@3.3.4/dist/reactivity.global.min.js"></script>
   <body>
@@ -32,7 +32,9 @@
     }
 
     function patchProps(el, key, preValue, nextValue) {
-      if (shouldSetAsProps(el, key, nextValue)) {
+      if (key === "class") {
+        el.className = nextValue;
+      } else if (shouldSetAsProps(el, key, nextValue)) {
         const type = typeof el[key];
         // 特殊处理 如 button 的 disable
         if (typeof type === "boolean" && nextValue === "") {
@@ -49,8 +51,14 @@
     function createRenderer(options) {
       const { createElement, setElementText, insert } = options;
 
+      function unmount(vnode) {
+        const el = vnode.el;
+        const parent = el.parentNode;
+        if (parent) parent.removeChild(el);
+      }
+
       function mountElement(vnode, container) {
-        const el = createElement(vnode.type);
+        const el = (vnode.el = createElement(vnode.type));
 
         // 需要处理属性，也就是 attributes 和 dom properties，优先处理 dom properties
         if (vnode.props) {
@@ -70,10 +78,21 @@
       }
 
       function patch(n1, n2, container) {
-        if (!n1) {
-          mountElement(n2, container);
-        } else {
-          // 需要打补丁
+        // 如果类型不相同，直接重新挂载
+        if (n1 && n1.type !== n2.type) {
+          unmount(n1);
+          n1 = null;
+        }
+
+        const { type } = n2;
+        if (typeof type === "string") {
+          if (!n1) {
+            mountElement(n2, container);
+          } else {
+            // 需要打补丁
+          }
+        } else if (typeof type === "object") {
+          // 处理组件
         }
       }
 
@@ -83,9 +102,9 @@
           patch(container._vnode, vnode, container);
         } else {
           if (container._vnode) {
-            container.innerHTML = "";
+            // container.innerHTML = "";
             // 卸载
-            // unmount(container._vnode, container);
+            unmount(container._vnode);
           }
         }
         container._vnode = vnode;
@@ -114,6 +133,7 @@
             type: "input",
             props: {
               value: count.value,
+              class: "input-class foo",
             },
           },
           {
