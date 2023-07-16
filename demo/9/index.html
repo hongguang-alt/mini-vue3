@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>9 简单 diff 算法</title>
+  </head>
+  <script src="https://cdn.jsdelivr.net/npm/@vue/reactivity@3.3.4/dist/reactivity.global.min.js"></script>
+  <body>
+    <div id="app"></div>
+  </body>
+
+  <script>
+    const Comment = Symbol();
+    const Text = Symbol();
+    const Fragment = Symbol();
+    // 设置文本
+    function setText(el, text) {
+      el.nodeValue = text;
+    }
+    // 创建文本节点
+    function createText(text) {
+      return document.createTextNode(text);
+    }
+    // 创建元素
+    function createElement(tag) {
+      return document.createElement(tag);
+    }
+    // 设置文本内容
+    function setElementText(el, text) {
+      el.textContent = text;
+    }
+    // 用于插入
+    function insert(el, parent, anchor = null) {
+      parent.insertBefore(el, anchor);
+    }
+
+    // 判断属性是否应该被设置 比如，input 的 form 属性不能被设置成属性，它是可读的
+    function shouldSetAsProps(el, key, value) {
+      if (el.tagName === "INPUT" && key === "form") return false;
+      return key in el;
+    }
+
+    function patchProps(el, key, preValue, nextValue) {
+      // 处理事件，通过伪造事件处理函数，来实现事件的绑定
+      if (/^on/.test(key)) {
+        const invokers = el._vei || (el._vei = {});
+        let invoker = invokers[key];
+        const name = key.slice(2).toLowerCase();
+        if (nextValue) {
+          if (!invoker) {
+            invoker = el._vei[key] = (e) => {
+              // 如果触发的时间比绑定的时间要早，就不触发
+              if (e.timeStamp < invoker.attached) return;
+              if (Array.isArray(invoker.value)) {
+                invoker.value.forEach((fn) => fn(e));
+              } else {
+                invoker.value(e);
+              }
+            };
+            invoker.value = nextValue;
+            // 事件绑定的时间
+            invoker.attached = performance.now();
+            // 还是只监听一次就可以了
+            el.addEventListener(name, invoker);
+          } else {
+            // 不需要重新绑定
+            invoker.value = nextValue;
+          }
+        } else if (invoker) {
+          // 只需要销毁一次就可以了
+          el.removeEventListener(name, invoker);
+        }
+      } else if (key === "class") {
+        el.className = nextValue;
+      } else if (shouldSetAsProps(el, key, nextValue)) {
+        const type = typeof el[key];
+        // 特殊处理 如 button 的 disable
+        if (typeof type === "boolean" && nextValue === "") {
+          el[key] = false;
+        } else {
+          el[key] = nextValue;
+        }
+      } else {
+        el.setAttribute(key, nextValue);
+      }
+    }
+
+    // 创建渲染器
+    function createRenderer(options) {
+      const { createElement, setElementText, insert, setText, createText } =
+        options;
+
+      // 简单 diff 算法
+      function simpleDiff(n1, n2, container) {
+        const oldChildren = n1.children;
+        const newChildren = n2.children;
+        const oldLength = oldChildren.length;
+        const newLength = newChildren.length;
+        const commonLength = Math.min(oldLength, newLength);
+        for (let i = 0; i < commonLength; i++) {
+          // 挂载到老节点上面
+          patch(oldChildren[i], newChildren[i], container);
+        }
+        if (oldLength > newLength) {
+          // 删除老节点
+          for (let i = commonLength; i < oldLength; i++) {
+            unmount(oldChildren[i]);
+          }
+        }
+        if (newLength > oldLength) {
+          for (let i = commonLength; i < newLength; i++) {
+            patch(null, newChildren[i], container);
+          }
+        }
+      }
+      // 针对 key 继续优化，没有 key 相当于没有什么可以优化的，那就直接卸载然后重新挂载
+      function simpleDiff2(n1, n2, container) {
+        const oldChildren = n1.children;
+        const newChildren = n2.children;
+        let lastIndex = 0;
+        for (let i = 0; i < newChildren.length; i++) {
+          let newNode = newChildren[i];
+          let j = 0;
+          let find = false;
+          for (let j = 0; j < oldChildren.length; j++) {
+            let oldNode = oldChildren[j];
+            if (oldNode.key === newNode.key && oldNode.key !== undefined) {
+              find = true;
+              patch(oldNode, newNode, container);
+              if (j < lastIndex) {
+                // 需要移动
+                const preNode = newChildren[i - 1];
+                if (preNode) {
+                  // 获取真正需要插入的位置的锚点
+                  const anchor = preNode.el.nextSibling;
+                  insert(oldNode.el, container, anchor);
+                }
+              } else {
+                lastIndex = j;
+              }
+              // 找到了，本次循环就不需要了
+              break;
+            }
+          }
+
+          if (!find) {
+            const preNode = newChildren[i - 1];
+            let anchor = null;
+            if (preNode) {
+              anchor = preNode.el.nextSibling;
+            } else {
+              anchor = container.firstChild;
+            }
+            patch(null, newNode, container, anchor);
+          }
+        }
+
+        for (let i = 0; i < oldChildren.length; i++) {
+          const oldNode = oldChildren[i];
+          const has = newChildren.find(
+            (newNode) =>
+              newNode.key === oldNode.key && newNode.key !== undefined
+          );
+          if (!has) {
+            unmount(oldNode);
+          }
+        }
+      }
+
+      function unmount(vnode) {
+        const el = vnode.el;
+        if (vnode.type === Fragment) {
+          vnode.children.forEach((c) => unmount(c));
+          return;
+        }
+        const parent = el.parentNode;
+        if (parent) parent.removeChild(el);
+      }
+
+      function mountElement(vnode, container, anchor) {
+        const el = (vnode.el = createElement(vnode.type));
+        // 需要处理属性，也就是 attributes 和 dom properties，优先处理 dom properties
+        if (vnode.props) {
+          for (key in vnode.props) {
+            patchProps(el, key, null, vnode.props[key]);
+          }
+        }
+
+        if (typeof vnode.children === "string") {
+          setElementText(el, vnode.children);
+        } else if (Array.isArray(vnode.children)) {
+          vnode.children.forEach((v) => {
+            patch(null, v, el);
+          });
+        }
+        insert(el, container, anchor);
+      }
+
+      function patchChildren(n1, n2, container) {
+        // 如果新节点是文本节点，直接替换
+        if (typeof n2.children === "string") {
+          // 要处理挂载操作
+          if (Array.isArray(n1.children)) {
+            n1.children.forEach((ch) => unmount(ch));
+          }
+          // 文本做了替换，但是没有处理卸载
+          setElementText(container, n2.children);
+        } else if (Array.isArray(n2.children)) {
+          if (Array.isArray(n1.children)) {
+            // 涉及到diff算法
+            console.time("diff");
+            // 最粗暴的方法
+            // n1.children.forEach((fn) => unmount(fn));
+            // n2.children.forEach((fn) => patch(null, fn, container));
+            // 简单 diff
+            simpleDiff2(n1, n2, container);
+            console.timeEnd("diff");
+          } else {
+            // 清空
+            setElementText(container, "");
+            // 重新挂载
+            n2.children.forEach((c) => patch(null, c, container));
+          }
+        } else {
+          if (Array.isArray(n1.children)) {
+            n1.children.forEach((c) => unmount(c));
+          } else if (typeof n1.children === "string") {
+            setElementText(container, "");
+          }
+        }
+      }
+
+      function patchElement(n1, n2, container) {
+        const el = (n2.el = n1.el);
+        const oldProps = n1.props;
+        const newProps = n2.props;
+        for (const key in newProps) {
+          if (newProps[key] !== oldProps[key]) {
+            patchProps(el, key, oldProps[key], newProps[key]);
+          }
+        }
+        for (const key in oldProps) {
+          if (!(key in newProps)) {
+            patchProps(el, key, oldProps[key], null);
+          }
+        }
+        // 对于子节点进行打补丁
+        patchChildren(n1, n2, el);
+      }
+
+      function patch(n1, n2, container, anchor) {
+        // 如果类型不相同，直接重新挂载
+        if (n1 && n1.type !== n2.type) {
+          unmount(n1);
+          n1 = null;
+        }
+
+        const { type } = n2;
+        if (typeof type === "string") {
+          if (!n1) {
+            mountElement(n2, container, anchor);
+          } else {
+            // 需要打补丁
+            patchElement(n1, n2, container);
+          }
+        } else if (typeof type === "object") {
+          // 处理组件
+        } else if (typeof type === Text) {
+          // 处理文本
+          if (!n1) {
+            const el = (n2.el = createText(n2.children));
+            insert(el, container);
+          } else {
+            const el = (n2.el = n1.el);
+            if (n2.children !== n1.children) {
+              setText(el, n2.children);
+            }
+          }
+        } else if (typeof type === Fragment) {
+          if (!n1) {
+            // 依次挂载就可
+            n2.children.forEach((c) => patch(null, c, container));
+          } else {
+            patchElement(n1, n2, container);
+          }
+        }
+      }
+
+      // 渲染
+      function render(vnode, container) {
+        if (vnode) {
+          patch(container._vnode, vnode, container);
+        } else {
+          if (container._vnode) {
+            // container.innerHTML = "";
+            // 卸载
+            unmount(container._vnode);
+          }
+        }
+        container._vnode = vnode;
+      }
+      return {
+        render,
+      };
+    }
+
+    const render = createRenderer({
+      createElement,
+      setElementText,
+      insert,
+      createText,
+      setText,
+    });
+  </script>
+
+  <script>
+    // 浏览器环境
+    const { effect, ref } = VueReactivity;
+
+    const bol = ref(false);
+
+    effect(() => {
+      const vnode = bol.value
+        ? {
+            type: "div",
+            children: [
+              {
+                type: "p",
+                children: "1",
+              },
+              {
+                type: "p",
+                children: "2",
+              },
+              {
+                type: "p",
+                children: "3",
+              },
+              {
+                type: "p",
+                children: "4",
+              },
+            ],
+          }
+        : {
+            type: "div",
+            children: [
+              {
+                type: "p",
+                children: "5",
+              },
+              {
+                type: "p",
+                children: "6",
+              },
+              {
+                type: "p",
+                children: "7",
+              },
+              {
+                type: "p",
+                children: "8",
+              },
+            ],
+          };
+      render.render(vnode, document.querySelector("#app"));
+    });
+
+    setTimeout(() => {
+      bol.value = true;
+    }, 3000);
+  </script>
+</html>
