@@ -169,18 +169,18 @@
       }
 
       function patchKeyedChildren(n1, n2, container) {
-        const newChildren = n2.children;
-        const oldChildren = n1.children;
+        let newChildren = n2.children;
+        let oldChildren = n1.children;
         // 四个索引
-        const newStartIdx = 0;
-        const newEndIdx = newChildren.length - 1;
-        const oldStartIdx = 0;
-        const oldEndIdx = oldChildren.length - 1;
+        let newStartIdx = 0;
+        let newEndIdx = newChildren.length - 1;
+        let oldStartIdx = 0;
+        let oldEndIdx = oldChildren.length - 1;
         // 四个节点
-        const newStartNode = newChildren[newStartIdx];
-        const newEndNode = newChildren[newEndIdx];
-        const oldStartNode = oldChildren[oldStartIdx];
-        const oldEndNode = oldChildren[oldEndIdx];
+        let newStartNode = newChildren[newStartIdx];
+        let newEndNode = newChildren[newEndIdx];
+        let oldStartNode = oldChildren[oldStartIdx];
+        let oldEndNode = oldChildren[oldEndIdx];
 
         while (newStartIdx <= newEndIdx && oldStartIdx <= oldEndIdx) {
           if (!oldStartNode) {
@@ -302,7 +302,7 @@
             // n2.children.forEach((fn) => patch(null, fn, container));
             // 简单 diff
             // simpleDiff2(n1, n2, container);
-            patchKeyedChildren(n2, n2, container);
+            patchKeyedChildren(n1, n2, container);
             console.timeEnd("diff");
           } else {
             // 清空
