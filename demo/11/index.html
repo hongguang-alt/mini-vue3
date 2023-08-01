@@ -14,6 +14,51 @@
     const Comment = Symbol();
     const Text = Symbol();
     const Fragment = Symbol();
+    // 定序列的递增子序列
+    function getSequence(arr) {
+      const p = arr.slice();
+      const result = [0];
+      let i, j, u, v, c;
+      const len = arr.length;
+      for (i = 0; i < len; i++) {
+        const arrI = arr[i];
+        if (arrI !== 0) {
+          j = result[result.length - 1];
+          if (arr[j] < arrI) {
+            p[i] = j;
+            result.push(i);
+            continue;
+          }
+          u = 0;
+          v = result.length - 1;
+          while (u < v) {
+            c = ((u + v) / 2) | 0;
+            if (arr[result[c] < arrI]) {
+              u = c + 1;
+            } else {
+              v = c;
+            }
+          }
+
+          if (arrI < arr[result[v]]) {
+            if (u > 0) {
+              p[i] = result[u - 1];
+            }
+            result[u] = i;
+          }
+        }
+      }
+
+      u = result.length;
+      v = result[u - 1];
+      while (u-- > 0) {
+        result[u] = v;
+        v = p[v];
+      }
+
+      return result;
+    }
+
     // 设置文本
     function setText(el, text) {
       el.nodeValue = text;
@@ -348,6 +393,41 @@
               unmount(oldVNode);
             }
           }
+          // 如果可以移动的话
+          if (moved) {
+            // 获取最长递增子序列
+            const seq = getSequence(source);
+            // s 指向最长递增子序列的最后一个元素
+            let s = seq.length - 1;
+            // i 指向新的一组子节点的最后一个元素
+            let i = count - 1;
+            // for 循环使得 i 递减
+            for (i; i >= 0; i--) {
+              if (source[i] === -1) {
+                // 说明索引为 i 的节点是全新的节点，应该将其挂在
+                // 该节点在新 children 中的真实位置索引
+                const pos = i + newStart;
+                const newVNode = newChildren[pos];
+                const nextPos = pos + 1;
+                const anchor =
+                  nextPos < newChildren.length ? newChildren[nextPos].el : null;
+                // 挂载
+                patch(null, newVNode, container, anchor);
+              } else if (i !== seq[s]) {
+                // 如果节点的索引 i 不等于 seq[s] 的值，说明该节点需要移动
+                const pos = i + newStart;
+                const newVNode = newChildren[pos];
+                const nextPos = pos + 1;
+                const anchor =
+                  nextPos < newChildren.length ? newChildren[nextPos].el : null;
+                // 移动
+                insert(newVNode.el, container, anchor);
+              } else {
+                // 当 i === seq[i] 时，说明该位置的节点不需要移动，只需要让s指向下一个位置
+                s--;
+              }
+            }
+          }
         }
       }
 
@@ -398,7 +478,8 @@
             // n2.children.forEach((fn) => patch(null, fn, container));
             // 简单 diff
             // simpleDiff2(n1, n2, container);
-            patchKeyedChildren(n1, n2, container);
+            // patchKeyedChildren(n1, n2, container);
+            quickDiff(n1, n2, container);
             console.timeEnd("diff");
           } else {
             // 清空
@@ -512,18 +593,22 @@
               {
                 type: "p",
                 children: "1",
+                key: 1,
               },
               {
                 type: "p",
                 children: "2",
+                key: 2,
               },
               {
                 type: "p",
                 children: "3",
+                key: 3,
               },
               {
                 type: "p",
                 children: "4",
+                key: 4,
               },
             ],
           }
@@ -533,18 +618,22 @@
               {
                 type: "p",
                 children: "5",
+                key: 4,
               },
               {
                 type: "p",
                 children: "6",
+                key: 3,
               },
               {
                 type: "p",
                 children: "7",
+                key: 2,
               },
               {
                 type: "p",
                 children: "8",
+                key: 1,
               },
             ],
           };
