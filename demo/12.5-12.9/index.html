@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>12 组件实现的原理</title>
+    <title>12 setup 函数的作用与实现、组件事件和emit、插槽的工作原理</title>
   </head>
   <script src="https://cdn.jsdelivr.net/npm/@vue/reactivity@3.3.4/dist/reactivity.global.min.js"></script>
   <body>
@@ -11,10 +11,22 @@
   </body>
 
   <script>
-    const { reactive, shallowReactive, effect, ref } = VueReactivity;
+    const { reactive, shallowReactive, effect, ref, shallowReadonly } =
+      VueReactivity;
     const Comment = Symbol();
     const Text = Symbol();
     const Fragment = Symbol();
+    let currentInstance = null;
+    function setCurrentInstance(instance) {
+      currentInstance = instance;
+    }
+    function onMounted(fn) {
+      if (currentInstance) {
+        currentInstance.mounted.push(fn);
+      } else {
+        console.log("onMounted 只能在 setup 函数中使用");
+      }
+    }
     // 定序列的递增子序列
     function getSequence(arr) {
       const p = arr.slice();
@@ -539,7 +551,7 @@
         const attrs = {};
         // 遍历为组件传递的 props 数据
         for (const key in propsData) {
-          if (key in options) {
+          if (key in options || key.startsWith("on")) {
             // 如果组件传递的 props 数据在组件自身的 props 选项中有定义，则将其视为合法的 props
             props[key] = propsData[key];
           } else {
@@ -563,9 +575,12 @@
           beforeUpdate,
           updated,
           props: propsOptions,
+          setup,
         } = componentOptions;
         const state = reactive(data());
         const [props, attrs] = resloveProps(propsOptions, vnode.props);
+        // 会在模版编译的时候，把 slot 直接编译到 children 中
+        const slots = vnode.children;
 
         beforeCreate && beforeCreate();
 
@@ -578,16 +593,50 @@
           isMounted: false,
           // 需要挂载的节点
           subTree: null,
+          slots,
+          mounted: [],
         };
+        // emit 其实就是就是去 props 里面找对应的函数，然后执行对应的函数就可以了
+        function emit(event, ...payload) {
+          const eventName = `on(${event[0].toUpperCase() + event.slice(1)})`;
+          const handler = instance.props[eventName];
+          if (handler) {
+            handler(...payload);
+          } else {
+            console.log("事件不存在");
+          }
+        }
+
+        // setupContext
+        const setupContext = { attrs, emit, slots };
+        // 在执行 setup 函数之前，设置当前组件实例
+        setCurrentInstance(instance);
+        // 执行 setup 函数，获取返回值
+        const setupResult = setup(shallowReadonly(props), setupContext);
+        // 在 setup 函数执行完毕之后，重置当前组件实例
+        setCurrentInstance(null);
+        // setupState 用来存储由 setup 返回的数据
+        let setupState = null;
+
+        if (typeof setupResult === "function") {
+          if (render) console.log("setup返回render函数，render选项会被省略");
+          render = setupResult;
+        } else {
+          setupState = setupResult;
+        }
+
         vnode.component = instance;
 
         const renderContext = new Proxy(instance, {
           get(t, k, r) {
-            const { state, props } = t;
+            const { state, props, slots } = t;
+            if (k === "$slots") return slots;
             if (state && k in state) {
               return state[k];
             } else if (k in props) {
               return props[k];
+            } else if (setupState && k in setupState) {
+              return setupState[k];
             } else {
               console.log("不存在");
             }
@@ -599,6 +648,8 @@
             } else if (k in props) {
               props[k] = v;
               console.log("不建议修改props中的值");
+            } else if (setupState && k in setupState) {
+              setupState[k] = v;
             } else {
               console.log("不存在");
             }
@@ -616,6 +667,7 @@
               patch(null, subTree, container, anchor);
               mounted && mounted.call(renderContext);
               instance.isMounted = true;
+              instance.mounted && instance.mounted.forEach((cb) => cb());
             } else {
               beforeUpdate && beforeMounted.call(renderContext);
               // 如果组件已经被挂在了，只需要完成自更新就可以了
