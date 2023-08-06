@@ -38,10 +38,12 @@ const keepAlive = {
       // 获取 ”内部组件“ 的 name
       const name = rawVNode.type.name;
       // 对 name 进行匹配
-       
+
       if (
+        // 如果 name 无法被 include 匹配
         (name && props.include && !props.include.test(name)) ||
-        (props.exclude && props.exclude.test(name))
+        // 或者被 exclude 匹配
+        (name && props.exclude && props.exclude.test(name))
       ) {
         return rawVNode;
       }
