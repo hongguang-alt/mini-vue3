@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>14.3 Transition 组件的实现</title>
+  </head>
+  <script src="https://cdn.jsdelivr.net/npm/@vue/reactivity@3.3.4/dist/reactivity.global.min.js"></script>
+  <style>
+    .box {
+      width: 100px;
+      height: 100px;
+      background-color: red;
+    }
+    .enter-from {
+      transform: translate(-200px);
+    }
+    .enter-to {
+      transform: translate(0);
+    }
+    .enter-active {
+      transition: all 1s;
+    }
+    .leave-from {
+      transform: scale(1);
+      opacity: 1;
+    }
+    .leave-to {
+      transform: scale(2);
+      opacity: 0;
+    }
+    .leave-active {
+      transition: all 2s;
+    }
+  </style>
+  <body>
+    <div id="app"></div>
+  </body>
+  <script>
+    // transition 组件的核心原理：
+    // 1.当 DOM 元素被挂载时，将动效附加到该 DOM 元素上
+    // 2.当 DOM 元素被卸载时，不要立即卸载 DOM 元素，而是等到附加到该 DOM 元素上的动效执行完成后再卸载它。
+
+    // 原生DOM的过渡
+    const el = document.createElement("div");
+    el.classList.add("box");
+
+    // 在 dom 被添加到页面之前，加上对应的 class
+    el.classList.add("enter-from");
+    el.classList.add("enter-active");
+
+    document.body.append(el);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.classList.remove("enter-from");
+        el.classList.add("enter-to");
+      });
+    });
+
+    el.addEventListener("click", () => {
+      const performRemove = () => el.parentNode.removeChild(el);
+      el.classList.add("leave-from");
+      el.classList.add("leave-active");
+      // 强制生效
+      document.body.offsetHeight;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.classList.remove("leave-from");
+          el.classList.add("leave-to");
+          el.addEventListener("transitionend", performRemove);
+        });
+      });
+    });
+  </script>
+</html>
