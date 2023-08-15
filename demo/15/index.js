@@ -69,7 +69,7 @@ function tokenize(str) {
           // 2.生成 Token
           tokens.push({
             type: "tag",
-            value: chars.join(""),
+            name: chars.join(""),
           });
           // 3.清空 chars 数组
           chars.length = 0;
@@ -132,5 +132,127 @@ function tokenize(str) {
   return tokens;
 }
 
-const tokens = tokenize("<div>hello</div>");
-console.log(tokens);
+// const tokens = tokenize("<div>hello</div>");
+
+function parse(str) {
+  // 获取 tokens
+  const tokens = tokenize(str);
+  const root = {
+    type: "Root",
+    children: [],
+  };
+  // 创建 栈
+  const elementStack = [root];
+
+  while (tokens.length) {
+    const parent = elementStack[elementStack.length - 1];
+    const t = tokens[0];
+    switch (t.type) {
+      case "tag":
+        // 如果当前 Token 是开始标签，则创建 Element 类型的 AST 节点
+        const elementNode = {
+          type: "Element",
+          tag: t.name,
+          children: [],
+        };
+        // 将当前节点添加到父节点的 children 中
+        parent.children.push(elementNode);
+        // 将当前节点压入栈
+        elementStack.push(elementNode);
+        break;
+      case "text":
+        // 如果当前 Token 是文本，则创建 Text 类型的 AST 节点
+        const textNode = {
+          type: "Text",
+          content: t.value,
+        };
+        parent.children.push(textNode);
+        break;
+      case "tagEnd":
+        elementStack.pop();
+        break;
+    }
+    // 消费每一个 token
+    tokens.shift();
+  }
+  return root;
+}
+
+function transformElement(node) {
+  if (node.type === "Element" && node.tag === "p") {
+    node.tag = "h1";
+  }
+}
+
+function transfromText(node, context) {
+  if (node.type === "Text" && node.content === "Vue") {
+    context.replaceNode({
+      type: "Element",
+      tag: "span",
+    });
+  }
+  if (node.type === "Text" && node.content === "Template") {
+    context.removeNode();
+  }
+}
+
+// 深度遍历
+function traverseNode(node, context) {
+  context.currentNode = node;
+  const nodeTransforms = context.nodeTransforms;
+  //   nodeTransforms.forEach((transform) => {
+  //     transform(context.currentNode, context);
+  //   });
+  for (let i = 0; i < nodeTransforms.length; i++) {
+    nodeTransforms[i](context.currentNode, context);
+    if (!context.currentNode) return;
+  }
+
+  const children = context.currentNode.children;
+  if (children) {
+    children.forEach((child, index) => {
+      context.parent = node;
+      context.childrenIndex = index;
+      traverseNode(child, context);
+    });
+  }
+}
+
+function transform(ast) {
+  const context = {
+    currentNode: null,
+    parent: null,
+    childrenIndex: 0,
+    replaceNode(node) {
+      context.parent.children[context.childrenIndex] = node;
+      context.currentNode = node;
+    },
+    removeNode() {
+      if (context.parent) {
+        context.parent.children.splice(context.childrenIndex, 1);
+        context.currentNode = null;
+      }
+    },
+    nodeTransforms: [transformElement, transfromText],
+  };
+  traverseNode(ast, context);
+}
+
+function dump(node, indent = 0) {
+  const type = node.type;
+  const desc =
+    type === "Root" ? "" : type === "Element" ? node.tag : node.content;
+  console.log(`${"-".repeat(indent)}${type}:${desc}`);
+  if (node.children) {
+    node.children.forEach((child) => {
+      dump(child, indent + 2);
+    });
+  }
+}
+
+// 解析 AST 树
+const ast = parse("<div><p>Vue</p><p>Template</p></div>");
+dump(ast);
+// 对 AST 树做转换
+transform(ast);
+dump(ast);
