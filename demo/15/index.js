@@ -178,33 +178,64 @@ function parse(str) {
   return root;
 }
 
+function transformRoot(node) {
+  return () => {
+    if (node.type !== "Root") return;
+    const vnodeJsNode = node.children[0].jsNode;
+    node.jsNode = {
+      type: "FunctionDecl",
+      id: { type: "Identifier", name: "render" },
+      params: [],
+      body: [
+        {
+          type: "ReturnStatement",
+          return: vnodeJsNode,
+        },
+      ],
+    };
+  };
+}
+
 function transformElement(node) {
-  if (node.type === "Element" && node.tag === "p") {
-    node.tag = "h1";
-  }
+  // 将转换代码编写在退出阶段的回调函数中
+  // 这样可以保证该标签节点的子节点全部被处理完毕
+  return () => {
+    if (node.type !== "Element") return;
+    // 1.创建 h 函数调用语句
+    const callExp = createCallExpression("h", [createStringLiteral(node.tag)]);
+    // 2.处理 h 函数调用的参数
+    node.children.length === 1
+      ? callExp.arguments.push(node.children[0].jsNode)
+      : callExp.arguments.push(
+          // 数组的每个元素都是子节点的 JsNode
+          createArrayExpression(node.children.map((child) => child.jsNode))
+        );
+    node.jsNode = callExp;
+  };
 }
 
 function transfromText(node, context) {
-  if (node.type === "Text" && node.content === "Vue") {
-    context.replaceNode({
-      type: "Element",
-      tag: "span",
-    });
-  }
-  if (node.type === "Text" && node.content === "Template") {
-    context.removeNode();
-  }
+  if (node.type !== "Text") return;
+  /**
+   * 文本节点对应的 JavaScript AST 节点其实就是一个字符串字面量
+   * 因此只需要使用 node.content 创建一个 StringLiteral 类型的节点即可
+   * 最后将文本节点对应的 JavaScript AST 节点赋值给 node.jsNode 即可
+   */
+  node.jsNode = createStringLiteral(node.content);
 }
 
 // 深度遍历
 function traverseNode(node, context) {
   context.currentNode = node;
   const nodeTransforms = context.nodeTransforms;
-  //   nodeTransforms.forEach((transform) => {
-  //     transform(context.currentNode, context);
-  //   });
+  // 新增退出阶段的回调函数数组
+  const exitFns = [];
   for (let i = 0; i < nodeTransforms.length; i++) {
-    nodeTransforms[i](context.currentNode, context);
+    const onExit = nodeTransforms[i](context.currentNode, context);
+    if (onExit) {
+      // 将退出节点的回调函数添加到 exitFns 数组中
+      exitFns.push(onExit);
+    }
     if (!context.currentNode) return;
   }
 
@@ -215,6 +246,12 @@ function traverseNode(node, context) {
       context.childrenIndex = index;
       traverseNode(child, context);
     });
+  }
+  // 在节点处理的最后阶段执行缓存到 exitFns 中的回调函数
+  // 注意，这里我们要反序执行
+  let i = exitFns.length;
+  while (i--) {
+    exitFns[i]();
   }
 }
 
@@ -233,7 +270,7 @@ function transform(ast) {
         context.currentNode = null;
       }
     },
-    nodeTransforms: [transformElement, transfromText],
+    nodeTransforms: [transfromText, transformRoot, transformElement],
   };
   traverseNode(ast, context);
 }
@@ -250,9 +287,148 @@ function dump(node, indent = 0) {
   }
 }
 
-// 解析 AST 树
-const ast = parse("<div><p>Vue</p><p>Template</p></div>");
-dump(ast);
-// 对 AST 树做转换
-transform(ast);
-dump(ast);
+// JavaScript AST 的一些方法
+
+// 创建字符串
+function createStringLiteral(value) {
+  return {
+    type: "StringLiteral",
+    value,
+  };
+}
+
+// 创建 变量
+function createIdentifier(name) {
+  return {
+    type: "Identifier",
+    name,
+  };
+}
+
+// 创建数组表达式
+function createArrayExpression(elements) {
+  return {
+    type: "ArrayExpression",
+    elements,
+  };
+}
+
+// 创建函数执行的表达式
+function createCallExpression(callee, arguments) {
+  return {
+    type: "CallExpression",
+    callee: createIdentifier(callee),
+    arguments,
+  };
+}
+
+function genNodeList(nodes, context) {
+  const { push } = context;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    genNode(node, context);
+    if (i < nodes.length - 1) {
+      push(",");
+    }
+  }
+}
+
+function genFunctionDecl(node, context) {
+  const { push, indent, deIndent } = context;
+  push(`function ${node.id.name} `);
+  push("(");
+  genNodeList(node.params, context);
+  push(") ");
+  push("{");
+  // 缩进
+  indent();
+  node.body.forEach((node) => {
+    genNode(node, context);
+  });
+  deIndent();
+  push("}");
+}
+
+function genArrayExpression(node, context) {
+  const { push } = context;
+  push("[");
+  genNodeList(node.elements, context);
+  push("]");
+}
+
+function genReturnStatement(node, context) {
+  const { push } = context;
+  push("return ");
+  genNode(node.return, context);
+}
+
+function genStringLiteral(node, context) {
+  const { push } = context;
+  push(`"${node.value}"`);
+}
+
+function genCallExpression(node, context) {
+  const { push } = context;
+  push(node.callee.name);
+  push("(");
+  genNodeList(node.arguments, context);
+  push(")");
+}
+
+function genNode(node, context) {
+  switch (node.type) {
+    case "FunctionDecl":
+      genFunctionDecl(node, context);
+      break;
+    case "ReturnStatement":
+      genReturnStatement(node, context);
+      break;
+    case "CallExpression":
+      genCallExpression(node, context);
+      break;
+    case "StringLiteral":
+      genStringLiteral(node, context);
+      break;
+    case "ArrayExpression":
+      genArrayExpression(node, context);
+      break;
+  }
+}
+
+// 生成js代码
+function generate(node) {
+  const context = {
+    code: "",
+    push(code) {
+      context.code += code;
+    },
+    currentIndent: 0,
+    newline() {
+      context.code += `\n${" ".repeat(context.currentIndent * 2)}`;
+    },
+    indent() {
+      context.currentIndent++;
+      context.newline();
+    },
+    deIndent() {
+      context.currentIndent--;
+      context.newline();
+    },
+  };
+  genNode(node, context);
+
+  return context.code;
+}
+
+function compile(str) {
+  // 解析 AST 树
+  const ast = parse(str);
+  // 对 AST 树做转换
+  transform(ast);
+  const code = generate(ast.jsNode);
+  console.log(code);
+}
+
+const str = "<div><p>Vue</p><p>Template</p></div>";
+
+compile(str);
